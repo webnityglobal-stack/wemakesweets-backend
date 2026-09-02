@@ -35,34 +35,6 @@ const userSchema = new mongoose.Schema(
       default: "user",
     },
 
-    // SUB ADMIN PERMISSIONS
-    permissions: {
-      products: {
-        type: Boolean,
-        default: false,
-      },
-
-      orders: {
-        type: Boolean,
-        default: false,
-      },
-
-      coupons: {
-        type: Boolean,
-        default: false,
-      },
-
-      reels: {
-        type: Boolean,
-        default: false,
-      },
-
-      users: {
-        type: Boolean,
-        default: false,
-      },
-    },
-
     resetPasswordToken: {
       type: String,
       default: null,
@@ -78,6 +50,6 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-const User = mongoose.model("User", userSchema);
-
-module.exports = User;
+module.exports =
+  mongoose.models.User ||
+  mongoose.model("User", userSchema);
