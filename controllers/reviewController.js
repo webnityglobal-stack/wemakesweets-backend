@@ -1,5 +1,5 @@
-const Review = require("../models/Review");
-const Product = require("../models/Product");
+const Review = require("../models/review");
+const Product = require("../models/product");
 
 
 // ==================================================

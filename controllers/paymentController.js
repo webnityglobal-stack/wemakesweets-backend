@@ -1,7 +1,7 @@
 // controllers/paymentController.js
 
-const Payment = require("../models/Payment");
-const Order = require("../models/Order");
+const Payment = require("../models/payment");
+const Order = require("../models/order");
 
 const {
   createShiprocketOrder,

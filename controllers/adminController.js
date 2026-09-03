@@ -1,5 +1,5 @@
 const User = require("../models/user");
-const Product = require("../models/Product");
+const Product = require("../models/product");
 const Order = require("../models/order");
 const bcrypt = require("bcryptjs");
 
