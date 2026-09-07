@@ -1,65 +1,204 @@
+const cors = require("cors");
 const express = require("express");
 const errorMiddleware = require("./middleware/errorMiddleware");
+
 const path = require("path");
+
 const app = express();
 
-// Middleware
-app.use(express.json());
+// ================================
+// CORS
+// ================================
 
-// Uploaded files
 app.use(
-  "/uploads",express.static(path.join(__dirname, "uploads"))
+  cors({
+    origin:[
+  "http://localhost:5173",
+    ],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
 );
 
-//Reels routes
-// Reels
+/*
+====================================================
+FASTRR WEBHOOK RAW BODY
+====================================================
+
+IMPORTANT:
+FASTRR webhook ka HMAC verify karne ke liye
+original/raw request body chahiye.
+
+Isliye ye route express.json() se PEHLE hona chahiye.
+*/
+
+app.use(
+  "/api/payment/fastrr/webhook",
+  express.raw({
+    type: "application/json",
+  })
+);
+
+
+// ====================================================
+// GLOBAL JSON MIDDLEWARE
+// ====================================================
+
+app.use(express.json());
+
+
+// ====================================================
+// UPLOADED FILES
+// ====================================================
+
+app.use(
+  "/uploads",
+  express.static(
+    path.join(__dirname, "uploads")
+  )
+);
+
+
+// ====================================================
+// REELS ROUTES
+// ====================================================
+
 app.use(
   "/api/reels",
   require("./routes/reelRoutes")
 );
 
 
-// Test route
+// ====================================================
+// TEST ROUTE
+// ====================================================
+
 app.get("/", (req, res) => {
-  res.send("We Make Sweets Backend is running!");
+  res.send(
+    "We Make Sweets Backend is running!"
+  );
 });
 
-// Auth routes
-app.use("/api/auth", require("./routes/authRoutes"));
 
-// Product Routes
-app.use("/api/products", require("./routes/productRoutes"));
+// ====================================================
+// AUTH ROUTES
+// ====================================================
+
+app.use(
+  "/api/auth",
+  require("./routes/authRoutes")
+);
 
 
-// Cart routes
+// ====================================================
+// PRODUCT ROUTES
+// ====================================================
+
+app.use(
+  "/api/products",
+  require("./routes/productRoutes")
+);
+
+
+// ====================================================
+// CART ROUTES
+// ====================================================
+
 app.use(
   "/api/cart",
   require("./routes/cartRoutes")
 );
 
-// Order routes
-app.use("/api/orders", require("./routes/orderRoutes"));
 
-//payment routes
-app.use("/api/payment",  require("./routes/paymentRoutes"));
+// ====================================================
+// WISHLIST ROUTES
+// ====================================================
 
-// Shiprocket routes
-app.use("/api/shiprocket", require("./routes/shiprocketRoutes"));
+app.use(
+  "/api/wishlist",
+  require("./routes/wishlistRoutes")
+);
 
-// Review routes
-app.use("/api/reviews", require("./routes/reviewRoutes"));
 
-// Hero Banner routes
-app.use("/api/hero-banner", require("./routes/heroBannerRoutes"));
+// ====================================================
+// ORDER ROUTES
+// ====================================================
 
-// User routes
-app.use("/api/users", require("./routes/userRoutes"));
+app.use(
+  "/api/orders",
+  require("./routes/orderRoutes")
+);
 
-// Admin routes
-app.use("/api/admin", require("./routes/adminRoutes"));
 
-// Error Middleware
+// ====================================================
+// PAYMENT ROUTES
+// ====================================================
+
+app.use(
+  "/api/payment",
+  require("./routes/paymentRoutes")
+);
+
+
+// ====================================================
+// SHIPROCKET ROUTES
+// ====================================================
+
+app.use(
+  "/api/shiprocket",
+  require("./routes/shiprocketRoutes")
+);
+
+
+// ====================================================
+// REVIEW ROUTES
+// ====================================================
+
+app.use(
+  "/api/reviews",
+  require("./routes/reviewRoutes")
+);
+
+
+// ====================================================
+// HERO BANNER ROUTES
+// ====================================================
+
+app.use(
+  "/api/hero-banner",
+  require("./routes/heroBannerRoutes")
+);
+
+
+// ====================================================
+// USER ROUTES
+// ====================================================
+
+app.use(
+  "/api/users",
+  require("./routes/userRoutes")
+);
+
+
+// ====================================================
+// ADMIN ROUTES
+// ====================================================
+
+app.use(
+  "/api/admin",
+  require("./routes/adminRoutes")
+);
+
+
+// ====================================================
+// ERROR MIDDLEWARE
+// ====================================================
+
 app.use(errorMiddleware);
 
-module.exports = app;
 
+// ====================================================
+// EXPORT APP
+// ====================================================
+
+module.exports = app;
