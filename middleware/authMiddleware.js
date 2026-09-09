@@ -20,7 +20,7 @@ const authMiddleware = (req, res, next) => {
         message: "Invalid authorization format",
       });
     }
-    
+
     // Extract token
     const token = authHeader.split(" ")[1];
 
@@ -30,23 +30,27 @@ const authMiddleware = (req, res, next) => {
       process.env.JWT_SECRET
     );
 
-     console.log("Decoded JWT:", decoded);
+    console.log("Decoded JWT:", decoded);
 
     // Store user ID in request
     req.user = decoded;
 
     // User ID
-    req.userId =
-      decoded.userId ||
-      decoded._id ||
-      decoded.id;
+    if (!decoded.userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid token: userId missing",
+      });
+    }
+
+    req.userId = decoded.userId;
 
 
     // Continue to controller
     next();
 
   } catch (error) {
-    
+
     console.error("Auth Error:", error.message);
 
     return res.status(401).json({

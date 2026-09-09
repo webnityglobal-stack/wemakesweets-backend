@@ -2,20 +2,16 @@ const mongoose = require("mongoose");
 const Wishlist = require("../models/wishlist");
 const Product = require("../models/product");
 
-// console.log("Wishlist:", Wishlist);
-// console.log("Wishlist findOne:", typeof Wishlist.findOne);
-// console.log("Wishlist create:", typeof Wishlist.create);
-
 // =====================================================
-// ADD PRODUCT TO WISHLIST
+// ADD PRODUCT VARIANT TO WISHLIST
 // =====================================================
 
 const addToWishlist = async (req, res) => {
   try {
     const userId = req.userId;
     const { productId } = req.params;
+    const { variantId } = req.body;
 
-    // Check user authentication
     if (!userId) {
       return res.status(401).json({
         success: false,
@@ -23,7 +19,6 @@ const addToWishlist = async (req, res) => {
       });
     }
 
-    // Check product ID
     if (!mongoose.isValidObjectId(productId)) {
       return res.status(400).json({
         success: false,
@@ -31,7 +26,7 @@ const addToWishlist = async (req, res) => {
       });
     }
 
-    // Check product exists
+    // Check product
     const product = await Product.findById(productId);
 
     if (!product) {
@@ -41,14 +36,42 @@ const addToWishlist = async (req, res) => {
       });
     }
 
-    // Find user's wishlist
-    let wishlist = await Wishlist.findOne({ user: userId });
+    let selectedVariant = null;
 
-    // Create wishlist if it doesn't exist
+    // If variantId is provided
+    if (variantId) {
+      if (!mongoose.isValidObjectId(variantId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid variant ID",
+        });
+      }
+
+      selectedVariant = product.variants.id(variantId);
+
+      if (!selectedVariant) {
+        return res.status(404).json({
+          success: false,
+          message: "Variant not found for this product",
+        });
+      }
+    }
+
+    // Find wishlist
+    let wishlist = await Wishlist.findOne({
+      user: userId,
+    });
+
+    // Create wishlist
     if (!wishlist) {
       wishlist = await Wishlist.create({
         user: userId,
-        products: [productId],
+        products: [
+          {
+            product: productId,
+            variantId: variantId || null,
+          },
+        ],
       });
 
       return res.status(201).json({
@@ -58,16 +81,29 @@ const addToWishlist = async (req, res) => {
       });
     }
 
-    // Check if product already exists
-    if (wishlist.products.some((id) => id.toString() === productId)) {
+    // Check same product + same variant
+    const alreadyExists = wishlist.products.some((item) => {
+      const sameProduct =
+        item.product.toString() === productId;
+
+      const sameVariant =
+        String(item.variantId || "") === String(variantId || "");
+
+      return sameProduct && sameVariant;
+    });
+
+    if (alreadyExists) {
       return res.status(400).json({
         success: false,
-        message: "Product already exists in wishlist",
+        message: "This product variant is already in wishlist",
       });
     }
 
-    // Add product
-    wishlist.products.push(productId);
+    // Add item
+    wishlist.products.push({
+      product: productId,
+      variantId: variantId || null,
+    });
 
     await wishlist.save();
 
@@ -76,7 +112,6 @@ const addToWishlist = async (req, res) => {
       message: "Product added to wishlist",
       wishlist,
     });
-
   } catch (error) {
     console.error("Add Wishlist Error:", error);
 
@@ -90,13 +125,14 @@ const addToWishlist = async (req, res) => {
 
 
 // =====================================================
-// REMOVE PRODUCT FROM WISHLIST
+// REMOVE PRODUCT VARIANT FROM WISHLIST
 // =====================================================
 
 const removeFromWishlist = async (req, res) => {
   try {
     const userId = req.userId;
     const { productId } = req.params;
+    const { variantId } = req.body;
 
     if (!userId) {
       return res.status(401).json({
@@ -112,7 +148,9 @@ const removeFromWishlist = async (req, res) => {
       });
     }
 
-    const wishlist = await Wishlist.findOne({ user: userId });
+    const wishlist = await Wishlist.findOne({
+      user: userId,
+    });
 
     if (!wishlist) {
       return res.status(404).json({
@@ -121,20 +159,24 @@ const removeFromWishlist = async (req, res) => {
       });
     }
 
-    const productExists = wishlist.products.some(
-      (id) => id.toString() === productId
-    );
+    const itemIndex = wishlist.products.findIndex((item) => {
+      const sameProduct =
+        item.product.toString() === productId;
 
-    if (!productExists) {
+      const sameVariant =
+        String(item.variantId || "") === String(variantId || "");
+
+      return sameProduct && sameVariant;
+    });
+
+    if (itemIndex === -1) {
       return res.status(400).json({
         success: false,
-        message: "Product is not in wishlist",
+        message: "Product variant is not in wishlist",
       });
     }
 
-    wishlist.products = wishlist.products.filter(
-      (id) => id.toString() !== productId
-    );
+    wishlist.products.splice(itemIndex, 1);
 
     await wishlist.save();
 
@@ -143,7 +185,6 @@ const removeFromWishlist = async (req, res) => {
       message: "Product removed from wishlist",
       wishlist,
     });
-
   } catch (error) {
     console.error("Remove Wishlist Error:", error);
 
@@ -173,9 +214,8 @@ const getWishlist = async (req, res) => {
 
     const wishlist = await Wishlist.findOne({
       user: userId,
-    }).populate("products");
+    }).populate("products.product");
 
-    // User doesn't have wishlist yet
     if (!wishlist) {
       return res.status(200).json({
         success: true,
@@ -191,7 +231,6 @@ const getWishlist = async (req, res) => {
       message: "Wishlist fetched successfully",
       wishlist,
     });
-
   } catch (error) {
     console.error("Get Wishlist Error:", error);
 
@@ -205,13 +244,14 @@ const getWishlist = async (req, res) => {
 
 
 // =====================================================
-// CHECK PRODUCT IN WISHLIST
+// CHECK PRODUCT VARIANT IN WISHLIST
 // =====================================================
 
 const checkWishlist = async (req, res) => {
   try {
     const userId = req.userId;
     const { productId } = req.params;
+    const { variantId } = req.query;
 
     if (!userId) {
       return res.status(401).json({
@@ -238,15 +278,20 @@ const checkWishlist = async (req, res) => {
       });
     }
 
-    const isWishlisted = wishlist.products.some(
-      (id) => id.toString() === productId
-    );
+    const isWishlisted = wishlist.products.some((item) => {
+      const sameProduct =
+        item.product.toString() === productId;
+
+      const sameVariant =
+        String(item.variantId || "") === String(variantId || "");
+
+      return sameProduct && sameVariant;
+    });
 
     return res.status(200).json({
       success: true,
       isWishlisted,
     });
-
   } catch (error) {
     console.error("Check Wishlist Error:", error);
 
@@ -260,13 +305,14 @@ const checkWishlist = async (req, res) => {
 
 
 // =====================================================
-// TOGGLE WISHLIST
+// TOGGLE PRODUCT VARIANT IN WISHLIST
 // =====================================================
 
 const toggleWishlist = async (req, res) => {
   try {
     const userId = req.userId;
     const { productId } = req.params;
+    const { variantId } = req.body;
 
     if (!userId) {
       return res.status(401).json({
@@ -282,7 +328,7 @@ const toggleWishlist = async (req, res) => {
       });
     }
 
-    // Check product exists
+    // Check product
     const product = await Product.findById(productId);
 
     if (!product) {
@@ -292,15 +338,39 @@ const toggleWishlist = async (req, res) => {
       });
     }
 
+    // Check variant
+    if (variantId) {
+      if (!mongoose.isValidObjectId(variantId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid variant ID",
+        });
+      }
+
+      const selectedVariant = product.variants.id(variantId);
+
+      if (!selectedVariant) {
+        return res.status(404).json({
+          success: false,
+          message: "Variant not found for this product",
+        });
+      }
+    }
+
     let wishlist = await Wishlist.findOne({
       user: userId,
     });
 
-    // If wishlist doesn't exist → create it
+    // Create wishlist
     if (!wishlist) {
       wishlist = await Wishlist.create({
         user: userId,
-        products: [productId],
+        products: [
+          {
+            product: productId,
+            variantId: variantId || null,
+          },
+        ],
       });
 
       return res.status(200).json({
@@ -310,13 +380,20 @@ const toggleWishlist = async (req, res) => {
       });
     }
 
-    const productIndex = wishlist.products.findIndex(
-      (id) => id.toString() === productId
-    );
+    // Find same product + variant
+    const itemIndex = wishlist.products.findIndex((item) => {
+      const sameProduct =
+        item.product.toString() === productId;
 
-    // Product exists → remove
-    if (productIndex !== -1) {
-      wishlist.products.splice(productIndex, 1);
+      const sameVariant =
+        String(item.variantId || "") === String(variantId || "");
+
+      return sameProduct && sameVariant;
+    });
+
+    // Exists → remove
+    if (itemIndex !== -1) {
+      wishlist.products.splice(itemIndex, 1);
 
       await wishlist.save();
 
@@ -327,8 +404,11 @@ const toggleWishlist = async (req, res) => {
       });
     }
 
-    // Product doesn't exist → add
-    wishlist.products.push(productId);
+    // Doesn't exist → add
+    wishlist.products.push({
+      product: productId,
+      variantId: variantId || null,
+    });
 
     await wishlist.save();
 
@@ -337,7 +417,6 @@ const toggleWishlist = async (req, res) => {
       message: "Product added to wishlist",
       isWishlisted: true,
     });
-
   } catch (error) {
     console.error("Toggle Wishlist Error:", error);
 

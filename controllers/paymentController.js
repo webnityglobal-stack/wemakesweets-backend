@@ -134,13 +134,20 @@ const createPayment = async (req, res) => {
     // FASTRR ITEMS
     // -------------------------------------------------
 
-    const items = order.items.map((item) => ({
-      variant_id: String(
-        item.product?._id || item.product
-      ),
+    const items = order.items.map((item) => {
 
-      quantity: Number(item.quantity),
-    }));
+  if (!item.variantId) {
+    throw new Error(
+      `Variant ID missing for order item: ${item.name}`
+    );
+  }
+
+  return {
+    variant_id: String(item.variantId),
+    quantity: Number(item.quantity),
+  };
+
+});
 
     // -------------------------------------------------
     // FASTRR CHECKOUT PAYLOAD

@@ -125,6 +125,13 @@ const createOrder = async (req, res) => {
       // PRODUCT ID
       // -----------------------------------------------
 
+      console.log("========== ORDER ITEM DEBUG ==========");
+      console.log("Received item:", JSON.stringify(item, null, 2));
+      console.log("Product ID:", item.product);
+      console.log("Variant ID:", item.variantId);
+      console.log("Quantity:", item.quantity);
+      console.log("======================================");
+
       if (!item.product) {
 
         return res.status(400).json({
@@ -164,6 +171,24 @@ const createOrder = async (req, res) => {
           item.product
         );
 
+      console.log("========== VARIANT DEBUG ==========");
+      console.log(
+        "Product variants:",
+        product.variants.map(v => ({
+          id: String(v._id),
+          title: v.title,
+          salePrice: v.salePrice,
+          sku: v.sku,
+          stock: v.stock
+        }))
+      );
+
+      console.log(
+        "Requested variantId:",
+        item.variantId
+      );
+      console.log("===================================");
+
 
       if (!product) {
 
@@ -180,8 +205,47 @@ const createOrder = async (req, res) => {
       // ACTUAL PRODUCT PRICE
       // -----------------------------------------------
 
-      const price =
-        Number(product.salePrice);
+      // -----------------------------------------------
+      // VARIANT
+      // -----------------------------------------------
+
+      let variant = null;
+
+      if (item.variantId) {
+        variant = product.variants.id(item.variantId);
+
+        if (!variant) {
+          return res.status(400).json({
+            success: false,
+            message: `Variant not found for ${item.variantId}`,
+          });
+        }
+
+        if (variant.stock < quantity) {
+          return res.status(400).json({
+            success: false,
+            message: `Insufficient stock for ${product.name} - ${variant.title}`,
+          });
+        }
+      }
+
+      // -----------------------------------------------
+      // ACTUAL PRICE
+      // -----------------------------------------------
+
+      const price = variant
+        ? Number(variant.salePrice)
+        : Number(product.salePrice);
+
+      if (
+        Number.isNaN(price) ||
+        price < 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid price for ${product.name}`,
+        });
+      }
 
 
       if (
@@ -218,12 +282,18 @@ const createOrder = async (req, res) => {
         product:
           product._id,
 
-        name:
-          product.name,
+        variantId: variant
+          ? variant._id
+          : null,
 
-        sku:
-          product.sku ||
-          product._id.toString(),
+        name: variant
+          ? `${product.name} - ${variant.title}`
+          : product.name,
+
+        sku: variant
+          ? variant.sku
+          : product._id.toString(),
+
 
         quantity,
 

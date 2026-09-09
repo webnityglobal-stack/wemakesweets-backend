@@ -122,11 +122,9 @@ const addProduct = async (req, res) => {
     }
 
 
-    // Get uploaded images
     const images =
       req.files?.map(
-        (file) =>
-          `/uploads/products/${file.filename}`
+        (file) => `/uploads/products/images/${file.filename}`
       ) || [];
 
 
@@ -187,6 +185,7 @@ const addProduct = async (req, res) => {
         : [],
     });
 
+    console.log("this is product upladed----------------------------------------------------------------- ", product);
 
     res.status(201).json({
       success: true,
@@ -244,7 +243,10 @@ const updateProduct = async (req, res) => {
       coupons,
     } = req.body;
 
-    // Check duplicate slug
+    // =========================
+    // CHECK DUPLICATE SLUG
+    // =========================
+
     if (slug && slug !== product.slug) {
       const existingProduct = await Product.findOne({
         slug,
@@ -259,9 +261,17 @@ const updateProduct = async (req, res) => {
       }
     }
 
-    // Update only fields that are provided
-    if (slug !== undefined) product.slug = slug;
-    if (name !== undefined) product.name = name;
+    // =========================
+    // UPDATE BASIC FIELDS
+    // =========================
+
+    if (slug !== undefined) {
+      product.slug = slug;
+    }
+
+    if (name !== undefined) {
+      product.name = name;
+    }
 
     if (shortDescription !== undefined) {
       product.shortDescription = shortDescription;
@@ -309,7 +319,10 @@ const updateProduct = async (req, res) => {
       product.countryOfOrigin = countryOfOrigin;
     }
 
-    // Arrays sent through FormData
+    // =========================
+    // UPDATE ARRAYS
+    // =========================
+
     if (highlights !== undefined) {
       product.highlights = JSON.parse(highlights);
     }
@@ -331,29 +344,32 @@ const updateProduct = async (req, res) => {
     }
 
     // =========================
-    // UPDATE IMAGES
+    // ADD MULTIPLE NEW IMAGES
     // =========================
 
     if (req.files && req.files.length > 0) {
       const newImages = req.files.map(
         (file) =>
-          `/uploads/products/${file.filename}`
+          `${req.protocol}://${req.get("host")}/uploads/products/images/${file.filename}`
       );
 
       product.images = [
-        ...product.images,
+        ...(product.images || []),
         ...newImages,
       ];
     }
 
+    // =========================
+    // SAVE PRODUCT
+    // =========================
+
     await product.save();
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: "Product updated successfully",
       product,
     });
-
   } catch (error) {
     console.error("Update Product Error:", error);
 

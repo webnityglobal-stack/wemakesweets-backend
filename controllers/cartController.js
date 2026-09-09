@@ -81,11 +81,13 @@ const addToCart = async (req, res) => {
       const sameProduct =
         item.product.toString() === productId;
 
-      const existingVariant =
-        item.variant?._id || null;
+      const existingVariantId =
+        item.variantId
+          ? item.variantId.toString()
+          : null;
 
       const sameVariant =
-        existingVariant === (variantId || null);
+        existingVariantId === (variantId || null);
 
       return sameProduct && sameVariant;
     });
@@ -109,17 +111,11 @@ const addToCart = async (req, res) => {
     } else {
       cart.items.push({
         product: productId,
+        variantId: selectedVariant
+          ? selectedVariant._id
+          : null,
         quantity: Number(quantity),
         price,
-        variant: selectedVariant
-          ? {
-              _id: selectedVariant._id,
-              title: selectedVariant.title,
-              salePrice: selectedVariant.salePrice,
-              mrp: selectedVariant.mrp,
-              sku: selectedVariant.sku,
-            }
-          : undefined,
       });
     }
 
@@ -238,11 +234,11 @@ const updateCartQuantity = async (req, res) => {
 
     let stock = product.stock;
 
-    if (item.variant?._id) {
+    if (item.variantId) {
       const variant = product.variants.find(
         (v) =>
           v._id.toString() ===
-          item.variant._id.toString()
+          item.variantId.toString()
       );
 
       if (variant) {

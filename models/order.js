@@ -11,6 +11,10 @@ const orderItemSchema = new mongoose.Schema(
       ref: "Product",
       required: true,
     },
+     variantId: {
+    type: mongoose.Schema.Types.ObjectId,
+    default: null,
+  },
 
     name: {
       type: String,

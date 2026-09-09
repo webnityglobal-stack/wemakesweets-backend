@@ -1,6 +1,11 @@
 const cors = require("cors");
 const express = require("express");
 const errorMiddleware = require("./middleware/errorMiddleware");
+const catalogRoutes = require("./routes/catalogRoutes");
+const collectionRoutes = require(
+  "./routes/collectionRoutes"
+);
+
 
 const path = require("path");
 
@@ -97,6 +102,22 @@ app.use(
 app.use(
   "/api/products",
   require("./routes/productRoutes")
+);
+
+// ====================================================
+// COLLECTION ROUTES
+// ==================================================== 
+app.use(
+  "/api/collections",
+  collectionRoutes
+);
+
+//====================================================
+// CATALOG ROUTES
+//====================================================  
+app.use(
+  "/api/catalog",
+  catalogRoutes
 );
 
 

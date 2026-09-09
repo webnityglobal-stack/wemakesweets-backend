@@ -300,6 +300,13 @@ const productSchema = new mongoose.Schema(
 
     // Product-specific coupons
     coupons: [couponSchema],
+    // Product collections
+    collections: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Collection",
+      },
+    ],
   },
   {
     timestamps: true,

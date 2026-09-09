@@ -3,7 +3,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const sendEmail = require("../utils/sendEmail");
 
-// ==================== SIGNUP ====================
+// ==================== SIGNUP ===================
 
 const signup = async (req, res) => {
   try {
@@ -16,7 +16,12 @@ const signup = async (req, res) => {
       });
     }
 
-    const existingEmail = await User.findOne({ email });
+    const normalizedEmail = email.toLowerCase().trim();
+    const normalizedPhone = phone.trim();
+
+    const existingEmail = await User.findOne({
+      email: normalizedEmail,
+    });
 
     if (existingEmail) {
       return res.status(400).json({
@@ -25,7 +30,9 @@ const signup = async (req, res) => {
       });
     }
 
-    const existingPhone = await User.findOne({ phone });
+    const existingPhone = await User.findOne({
+      phone: normalizedPhone,
+    });
 
     if (existingPhone) {
       return res.status(400).json({
@@ -34,29 +41,51 @@ const signup = async (req, res) => {
       });
     }
 
+    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // Create user
     const user = await User.create({
       name,
-      email,
-      phone,
+      email: normalizedEmail,
+      phone: normalizedPhone,
       password: hashedPassword,
     });
 
-    res.status(201).json({
+    // ==================== AUTO LOGIN ====================
+
+    const token = jwt.sign(
+      {
+        userId: user._id,
+        role: user.role,
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "7d",
+      }
+    );
+
+    // ==================== RESPONSE ====================
+
+    return res.status(201).json({
       success: true,
-      message: "User registered successfully",
+      message: "Signup successful. You are now logged in.",
+
+      token,
+
       user: {
         id: user._id,
         name: user.name,
         email: user.email,
         phone: user.phone,
+        role: user.role,
       },
     });
+
   } catch (error) {
     console.error("SIGNUP ERROR:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
