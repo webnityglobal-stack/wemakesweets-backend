@@ -2,10 +2,12 @@ const Order = require("../models/order");
 
 const {
   createShiprocketOrder,
+  generatePickup,
   generateAWB,
   trackByShipment,
   cancelShiprocketOrder,
 } = require("../services/shiprocketService");
+
 
 
 // ==================================================
@@ -22,7 +24,14 @@ const createShipment = async (req, res) => {
 
     const order = await Order.findOne({
       orderId,
-      // user: req.user._id,
+      user: req.user.userId,
+    });
+
+    console.log("SHIPROCKET ORDER CHECK:", {
+      orderId: order.orderId,
+      paymentMethod: order.paymentMethod,
+      paymentStatus: order.paymentStatus,
+      orderStatus: order.orderStatus,
     });
 
     if (!order) {
@@ -42,21 +51,6 @@ const createShipment = async (req, res) => {
           "Online payment is not completed. Shiprocket order cannot be created.",
         paymentStatus: order.paymentStatus,
       });
-    }
-
-
-    // -----------------------------------------------
-    // CHECK PAYMENT
-    // -----------------------------------------------
-
-    if (order.paymentMethod === "ONLINE") {
-      if (order.paymentStatus !== "PAID") {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Online payment is not completed. Shiprocket order cannot be created.",
-        });
-      }
     }
 
 
@@ -484,15 +478,83 @@ const assignAWB = async (req, res) => {
   }
 };
 
+// ==================================================
+// GENERATE PICKUP
+// ==================================================
+
+const pickupShipment = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    const order = await Order.findOne({
+      orderId,
+      user: req.user.userId,
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    if (!order.shiprocket?.shipmentId) {
+      return res.status(400).json({
+        success: false,
+        message: "Shiprocket shipment has not been created",
+      });
+    }
+
+    if (!order.shiprocket?.awbCode) {
+      return res.status(400).json({
+        success: false,
+        message: "AWB has not been generated yet",
+      });
+    }
+
+    const response = await generatePickup(
+      order.shiprocket.shipmentId
+    );
+
+    console.log("Pickup Response:", response);
+
+    order.shiprocket.pickupScheduled = true;
+    order.shiprocket.status = "PICKUP_REQUESTED";
+
+    await order.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Pickup request generated successfully",
+      data: response,
+      shiprocket: {
+        orderId: order.shiprocket.orderId,
+        shipmentId: order.shiprocket.shipmentId,
+        awbCode: order.shiprocket.awbCode,
+        status: order.shiprocket.status,
+      },
+    });
+
+  } catch (error) {
+    console.error(
+      "Generate Pickup Error:",
+      error.response?.data || error.message
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to generate pickup",
+      error: error.response?.data || error.message,
+    });
+  }
+};
+
 
 // ==================================================
 // TRACK SHIPMENT
 // ==================================================
 
-const getShipmentTracking = async (
-  req,
-  res
-) => {
+const getShipmentTracking = async (req, res) => {
 
   try {
 
@@ -714,6 +776,7 @@ const cancelShipment = async (
 module.exports = {
   createShipment,
   assignAWB,
+  pickupShipment,
   getShipmentTracking,
   cancelShipment,
 };

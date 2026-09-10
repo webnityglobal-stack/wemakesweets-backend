@@ -1,7 +1,14 @@
 const mongoose = require("mongoose");
+const generateShiprocketId = require("../utils/generateShiprocketId");
 
 const collectionSchema = new mongoose.Schema(
   {
+    shiprocketId: {
+      type: Number,
+      unique: true,
+      index: true,
+      default: generateShiprocketId,
+    },
     name: {
       type: String,
       required: true,

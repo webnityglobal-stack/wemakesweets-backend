@@ -1,6 +1,6 @@
 const Review = require("../models/review");
 const Product = require("../models/product");
-
+const Order = require("../models/order");
 
 // ==================================================
 // ADD REVIEW
@@ -27,8 +27,8 @@ const addReview = async (req, res) => {
 
     if (
       rating === undefined ||
-      rating < 1 ||
-      rating > 5
+      Number(rating) < 1 ||
+      Number(rating) > 5
     ) {
       return res.status(400).json({
         success: false,
@@ -50,13 +50,55 @@ const addReview = async (req, res) => {
     // CHECK PRODUCT
     // ------------------------------------------
 
-    const product =
-      await Product.findById(productId);
+    const product = await Product.findById(productId);
 
     if (!product) {
       return res.status(404).json({
         success: false,
         message: "Product not found",
+      });
+    }
+
+    // ------------------------------------------
+    // CHECK PURCHASE
+    // ------------------------------------------
+
+    const purchasedOrder = await Order.findOne({
+      user: req.user._id,
+
+      paymentStatus: "PAID",
+
+      orderStatus: "DELIVERED",
+
+      "items.product": productId,
+    });
+
+    // ------------------------------------------
+    // USER DID NOT PURCHASE PRODUCT
+    // ------------------------------------------
+
+    if (!purchasedOrder) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "You can only review a product after purchasing and receiving it",
+      });
+    }
+
+    // ------------------------------------------
+    // CHECK IF USER ALREADY REVIEWED
+    // ------------------------------------------
+
+    const existingReview = await Review.findOne({
+      product: productId,
+      user: req.user._id,
+    });
+
+    if (existingReview) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "You have already reviewed this product",
       });
     }
 
@@ -74,6 +116,10 @@ const addReview = async (req, res) => {
       rating: Number(rating),
 
       comment: comment.trim(),
+
+      verifiedPurchase: true,
+
+      isApproved: true,
     });
 
     // ------------------------------------------

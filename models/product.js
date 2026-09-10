@@ -1,39 +1,5 @@
 const mongoose = require("mongoose");
 
-// // ==================== REVIEW SCHEMA ====================
-
-// const reviewSchema = new mongoose.Schema(
-//   {
-//     name: {
-//       type: String,
-//       required: true,
-//       trim: true,
-//     },
-
-//     rating: {
-//       type: Number,
-//       required: true,
-//       min: 1,
-//       max: 5,
-//     },
-
-//     date: {
-//       type: Date,
-//       default: Date.now,
-//     },
-
-//     comment: {
-//       type: String,
-//       required: true,
-//       trim: true,
-//     },
-//   },
-//   {
-//     _id: true,
-//   }
-// );
-
-
 // ==================== NUTRITION SCHEMA ====================
 
 const nutritionSchema = new mongoose.Schema(
@@ -78,6 +44,11 @@ const nutritionSchema = new mongoose.Schema(
 
 const variantSchema = new mongoose.Schema(
   {
+    shiprocketId: {
+      type: Number,
+      unique: true,
+      index: true,
+    },
     title: {
       type: String,
       required: true,
@@ -188,6 +159,11 @@ const couponSchema = new mongoose.Schema(
 
 const productSchema = new mongoose.Schema(
   {
+    shiprocketId: {
+      type: Number,
+      unique: true,
+      index: true,
+    },
     slug: {
       type: String,
       required: true,
