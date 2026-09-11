@@ -83,7 +83,7 @@ const addToWishlist = async (req, res) => {
 
     // Check same product + same variant
     const alreadyExists = wishlist.products.some((item) => {
-      const sameProduct =
+      const sameProduct =item.product &&
         item.product.toString() === productId;
 
       const sameVariant =
@@ -160,7 +160,7 @@ const removeFromWishlist = async (req, res) => {
     }
 
     const itemIndex = wishlist.products.findIndex((item) => {
-      const sameProduct =
+      const sameProduct = item.product &&
         item.product.toString() === productId;
 
       const sameVariant =
@@ -251,7 +251,7 @@ const checkWishlist = async (req, res) => {
   try {
     const userId = req.userId;
     const { productId } = req.params;
-    const { variantId } = req.query|| {};
+    const { variantId } = req.query;
 
     if (!userId) {
       return res.status(401).json({
@@ -279,7 +279,7 @@ const checkWishlist = async (req, res) => {
     }
 
     const isWishlisted = wishlist.products.some((item) => {
-      const sameProduct =
+      const sameProduct = item.product &&
         item.product.toString() === productId;
 
       const sameVariant =
@@ -382,7 +382,7 @@ const toggleWishlist = async (req, res) => {
 
     // Find same product + variant
     const itemIndex = wishlist.products.findIndex((item) => {
-      const sameProduct =
+      const sameProduct = item.product &&
         item.product.toString() === productId;
 
       const sameVariant =
