@@ -3,6 +3,7 @@ const express = require("express");
 const {
   createShipment,
   assignAWB,
+  pickupShipment,
   getShipmentTracking,
   cancelShipment,
 } = require("../controllers/shiprocketController");
@@ -26,6 +27,20 @@ router.post(
   authMiddleware,
   assignAWB
 );
+
+// Pickup shipment
+router.post(
+  "/pickup/:orderId",
+  authMiddleware,
+  pickupShipment
+);
+
+router.post("/test", (req, res) => {
+  res.json({
+    success: true,
+    message: "Shiprocket route is working"
+  });
+});
 
 
 // Track shipment

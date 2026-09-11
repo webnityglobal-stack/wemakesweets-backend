@@ -9,7 +9,6 @@ const {
 } = require("../services/shiprocketService");
 
 
-
 // ==================================================
 // CREATE SHIPROCKET ORDER
 // ==================================================
@@ -27,12 +26,9 @@ const createShipment = async (req, res) => {
       user: req.user.userId,
     });
 
-    console.log("SHIPROCKET ORDER CHECK:", {
-      orderId: order.orderId,
-      paymentMethod: order.paymentMethod,
-      paymentStatus: order.paymentStatus,
-      orderStatus: order.orderStatus,
-    });
+    // -----------------------------------------------
+    // CHECK ORDER
+    // -----------------------------------------------
 
     if (!order) {
       return res.status(404).json({
@@ -40,6 +36,17 @@ const createShipment = async (req, res) => {
         message: "Order not found",
       });
     }
+
+    console.log("SHIPROCKET ORDER CHECK:", {
+      orderId: order.orderId,
+      paymentMethod: order.paymentMethod,
+      paymentStatus: order.paymentStatus,
+      orderStatus: order.orderStatus,
+    });
+
+    // -----------------------------------------------
+    // CHECK ONLINE PAYMENT
+    // -----------------------------------------------
 
     if (
       order.paymentMethod === "ONLINE" &&
@@ -53,9 +60,8 @@ const createShipment = async (req, res) => {
       });
     }
 
-
     // -----------------------------------------------
-    // CHECK IF SHIPROCKET ORDER ALREADY EXISTS
+    // CHECK EXISTING SHIPROCKET ORDER
     // -----------------------------------------------
 
     if (order.shiprocket?.orderId) {
@@ -67,13 +73,18 @@ const createShipment = async (req, res) => {
       });
     }
 
-
     // -----------------------------------------------
     // SHIPPING ADDRESS
     // -----------------------------------------------
 
     const address = order.shippingAddress;
 
+    if (!address) {
+      return res.status(400).json({
+        success: false,
+        message: "Shipping address is missing",
+      });
+    }
 
     // -----------------------------------------------
     // PREPARE ORDER ITEMS
@@ -87,6 +98,14 @@ const createShipment = async (req, res) => {
       discount: 0,
     }));
 
+    // -----------------------------------------------
+    // PREPARE SUB TOTAL
+    // -----------------------------------------------
+
+    const subTotal = order.items.reduce(
+      (sum, item) => sum + item.total,
+      0
+    );
 
     // -----------------------------------------------
     // PREPARE SHIPROCKET PAYLOAD
@@ -99,10 +118,10 @@ const createShipment = async (req, res) => {
         .toISOString()
         .split("T")[0],
 
-      pickup_location: process.env.SHIPROCKET_PICKUP_LOCATION,
+      pickup_location:
+        process.env.SHIPROCKET_PICKUP_LOCATION,
 
       comment: "We Make Sweets Order",
-
 
       // ==============================================
       // BILLING
@@ -129,7 +148,6 @@ const createShipment = async (req, res) => {
         address.email || "",
 
       billing_phone: address.phone,
-
 
       // ==============================================
       // SHIPPING
@@ -159,19 +177,11 @@ const createShipment = async (req, res) => {
 
       shipping_phone: address.phone,
 
-
       // ==============================================
       // PRODUCTS
       // ==============================================
 
-      order_items: order.items.map((item) => ({
-        name: item.name,
-        sku: item.sku,
-        units: item.quantity,
-        selling_price: item.price,
-        discount: 0,
-      })),
-
+      order_items: orderItems,
 
       // ==============================================
       // PAYMENT
@@ -181,7 +191,6 @@ const createShipment = async (req, res) => {
         order.paymentMethod === "COD"
           ? "COD"
           : "Prepaid",
-
 
       // ==============================================
       // CHARGES
@@ -195,8 +204,7 @@ const createShipment = async (req, res) => {
 
       total_discount: 0,
 
-      sub_total: order.totalAmount,
-
+      sub_total: subTotal,
 
       // ==============================================
       // PACKAGE
@@ -211,58 +219,70 @@ const createShipment = async (req, res) => {
       weight: 0.5,
     };
 
-
-    console.log(
-      "Shiprocket Order Payload:",
-      shiprocketOrderData
-    );
-
-
     // -----------------------------------------------
-    // CREATE SHIPROCKET ORDER
+    // LOG PAYLOAD
     // -----------------------------------------------
 
     console.log(
       "SHIPROCKET ORDER PAYLOAD:",
-      JSON.stringify(shiprocketOrderData, null, 2)
+      JSON.stringify(
+        shiprocketOrderData,
+        null,
+        2
+      )
     );
+
+    // -----------------------------------------------
+    // CREATE SHIPROCKET ORDER
+    // -----------------------------------------------
 
     const response =
       await createShiprocketOrder(
         shiprocketOrderData
       );
 
-
     console.log(
-      "Shiprocket Create Order Response:",
+      "SHIPROCKET CREATE RESPONSE:",
       response
     );
 
+    // -----------------------------------------------
+    // VALIDATE RESPONSE
+    // -----------------------------------------------
+
+    if (
+      !response ||
+      !response.order_id ||
+      !response.shipment_id
+    ) {
+      return res.status(500).json({
+        success: false,
+        message:
+          "Shiprocket order was not created successfully",
+        data: response,
+      });
+    }
 
     // -----------------------------------------------
     // SAVE SHIPROCKET DETAILS
     // -----------------------------------------------
 
     order.shiprocket.orderId =
-      response.order_id || null;
+      String(response.order_id);
 
     order.shiprocket.shipmentId =
-      response.shipment_id || null;
+      String(response.shipment_id);
 
     order.shiprocket.status =
       "ORDER_CREATED";
-
 
     // -----------------------------------------------
     // UPDATE ORDER STATUS
     // -----------------------------------------------
 
-    order.orderStatus =
-      "CONFIRMED";
-
+    order.orderStatus = "CONFIRMED";
 
     await order.save();
-
 
     // -----------------------------------------------
     // SUCCESS RESPONSE
@@ -294,15 +314,12 @@ const createShipment = async (req, res) => {
       },
     });
 
-
   } catch (error) {
-
     console.error(
       "Create Shipment Error:",
       error.response?.data ||
       error.message
     );
-
 
     return res.status(500).json({
       success: false,
@@ -324,9 +341,7 @@ const createShipment = async (req, res) => {
 
 const assignAWB = async (req, res) => {
   try {
-
     const { orderId } = req.params;
-
 
     // -----------------------------------------------
     // FIND ORDER
@@ -337,14 +352,12 @@ const assignAWB = async (req, res) => {
       user: req.user.userId,
     });
 
-
     if (!order) {
       return res.status(404).json({
         success: false,
         message: "Order not found",
       });
     }
-
 
     // -----------------------------------------------
     // CHECK SHIPMENT
@@ -353,30 +366,27 @@ const assignAWB = async (req, res) => {
     if (!order.shiprocket?.shipmentId) {
       return res.status(400).json({
         success: false,
-
         message:
           "Shiprocket shipment has not been created",
       });
     }
-
 
     // -----------------------------------------------
     // GENERATE AWB
     // -----------------------------------------------
 
     const response = await generateAWB({
-      shipmentId: order.shiprocket.shipmentId,
+      shipmentId:
+        order.shiprocket.shipmentId,
     });
-
 
     console.log(
       "AWB Response:",
       response
     );
 
-
     // -----------------------------------------------
-    // SAVE AWB DETAILS
+    // EXTRACT AWB DETAILS
     // -----------------------------------------------
 
     const awbDetails =
@@ -389,42 +399,48 @@ const assignAWB = async (req, res) => {
       awbDetails
     );
 
+    // -----------------------------------------------
+    // CHECK AWB
+    // -----------------------------------------------
 
-    if (awbDetails?.awb_code) {
-
-      order.shiprocket.awbCode =
-        awbDetails.awb_code;
-
+    if (!awbDetails?.awb_code) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "AWB was not generated",
+        data: response,
+      });
     }
 
+    // -----------------------------------------------
+    // SAVE AWB DETAILS
+    // -----------------------------------------------
 
-    if (awbDetails?.courier_name) {
+    order.shiprocket.awbCode =
+      awbDetails.awb_code;
 
+    if (awbDetails.courier_name) {
       order.shiprocket.courierName =
         awbDetails.courier_name;
-
     }
 
-
-    if (awbDetails?.courier_company_id) {
-
+    if (awbDetails.courier_company_id) {
       order.shiprocket.courierId =
         String(
           awbDetails.courier_company_id
         );
-
     }
-
 
     order.shiprocket.status =
       "AWB_GENERATED";
 
-
     await order.save();
 
+    // -----------------------------------------------
+    // SUCCESS
+    // -----------------------------------------------
 
     return res.status(200).json({
-
       success: true,
 
       message:
@@ -433,7 +449,6 @@ const assignAWB = async (req, res) => {
       data: response,
 
       shiprocket: {
-
         orderId:
           order.shiprocket.orderId,
 
@@ -452,18 +467,14 @@ const assignAWB = async (req, res) => {
         status:
           order.shiprocket.status,
       },
-
     });
 
-
   } catch (error) {
-
     console.error(
       "Generate AWB Error:",
       error.response?.data ||
       error.message
     );
-
 
     return res.status(500).json({
       success: false,
@@ -478,6 +489,7 @@ const assignAWB = async (req, res) => {
   }
 };
 
+
 // ==================================================
 // GENERATE PICKUP
 // ==================================================
@@ -485,6 +497,10 @@ const assignAWB = async (req, res) => {
 const pickupShipment = async (req, res) => {
   try {
     const { orderId } = req.params;
+
+    // -----------------------------------------------
+    // FIND ORDER
+    // -----------------------------------------------
 
     const order = await Order.findOne({
       orderId,
@@ -498,53 +514,99 @@ const pickupShipment = async (req, res) => {
       });
     }
 
+    // -----------------------------------------------
+    // CHECK SHIPMENT
+    // -----------------------------------------------
+
     if (!order.shiprocket?.shipmentId) {
       return res.status(400).json({
         success: false,
-        message: "Shiprocket shipment has not been created",
+        message:
+          "Shiprocket shipment has not been created",
       });
     }
+
+    // -----------------------------------------------
+    // CHECK AWB
+    // -----------------------------------------------
 
     if (!order.shiprocket?.awbCode) {
       return res.status(400).json({
         success: false,
-        message: "AWB has not been generated yet",
+        message:
+          "AWB has not been generated yet",
       });
     }
 
-    const response = await generatePickup(
-      order.shiprocket.shipmentId
+    // -----------------------------------------------
+    // GENERATE PICKUP
+    // -----------------------------------------------
+
+    const response =
+      await generatePickup(
+        order.shiprocket.shipmentId
+      );
+
+    console.log(
+      "Pickup Response:",
+      response
     );
 
-    console.log("Pickup Response:", response);
+    // -----------------------------------------------
+    // UPDATE DATABASE
+    // -----------------------------------------------
 
-    order.shiprocket.pickupScheduled = true;
-    order.shiprocket.status = "PICKUP_REQUESTED";
+    order.shiprocket.pickupScheduled =
+      true;
+
+    order.shiprocket.status =
+      "PICKUP_REQUESTED";
 
     await order.save();
 
+    // -----------------------------------------------
+    // SUCCESS
+    // -----------------------------------------------
+
     return res.status(200).json({
       success: true,
-      message: "Pickup request generated successfully",
+
+      message:
+        "Pickup request generated successfully",
+
       data: response,
+
       shiprocket: {
-        orderId: order.shiprocket.orderId,
-        shipmentId: order.shiprocket.shipmentId,
-        awbCode: order.shiprocket.awbCode,
-        status: order.shiprocket.status,
+        orderId:
+          order.shiprocket.orderId,
+
+        shipmentId:
+          order.shiprocket.shipmentId,
+
+        awbCode:
+          order.shiprocket.awbCode,
+
+        status:
+          order.shiprocket.status,
       },
     });
 
   } catch (error) {
     console.error(
       "Generate Pickup Error:",
-      error.response?.data || error.message
+      error.response?.data ||
+      error.message
     );
 
     return res.status(500).json({
       success: false,
-      message: "Unable to generate pickup",
-      error: error.response?.data || error.message,
+
+      message:
+        "Unable to generate pickup",
+
+      error:
+        error.response?.data ||
+        error.message,
     });
   }
 };
@@ -555,11 +617,8 @@ const pickupShipment = async (req, res) => {
 // ==================================================
 
 const getShipmentTracking = async (req, res) => {
-
   try {
-
     const { orderId } = req.params;
-
 
     // -----------------------------------------------
     // FIND ORDER
@@ -570,14 +629,12 @@ const getShipmentTracking = async (req, res) => {
       user: req.user.userId,
     });
 
-
     if (!order) {
       return res.status(404).json({
         success: false,
         message: "Order not found",
       });
     }
-
 
     // -----------------------------------------------
     // CHECK SHIPMENT
@@ -586,12 +643,10 @@ const getShipmentTracking = async (req, res) => {
     if (!order.shiprocket?.shipmentId) {
       return res.status(400).json({
         success: false,
-
         message:
           "Shipment has not been created",
       });
     }
-
 
     // -----------------------------------------------
     // GET TRACKING
@@ -602,9 +657,11 @@ const getShipmentTracking = async (req, res) => {
         order.shiprocket.shipmentId
       );
 
+    // -----------------------------------------------
+    // SUCCESS
+    // -----------------------------------------------
 
     return res.status(200).json({
-
       success: true,
 
       orderId:
@@ -615,21 +672,16 @@ const getShipmentTracking = async (req, res) => {
 
       tracking:
         response,
-
     });
 
-
   } catch (error) {
-
     console.error(
       "Tracking Error:",
       error.response?.data ||
       error.message
     );
 
-
     return res.status(500).json({
-
       success: false,
 
       message:
@@ -638,7 +690,6 @@ const getShipmentTracking = async (req, res) => {
       error:
         error.response?.data ||
         error.message,
-
     });
   }
 };
@@ -648,15 +699,9 @@ const getShipmentTracking = async (req, res) => {
 // CANCEL SHIPROCKET ORDER
 // ==================================================
 
-const cancelShipment = async (
-  req,
-  res
-) => {
-
+const cancelShipment = async (req, res) => {
   try {
-
     const { orderId } = req.params;
-
 
     // -----------------------------------------------
     // FIND ORDER
@@ -667,14 +712,12 @@ const cancelShipment = async (
       user: req.user.userId,
     });
 
-
     if (!order) {
       return res.status(404).json({
         success: false,
         message: "Order not found",
       });
     }
-
 
     // -----------------------------------------------
     // CHECK SHIPROCKET ORDER
@@ -683,12 +726,10 @@ const cancelShipment = async (
     if (!order.shiprocket?.orderId) {
       return res.status(400).json({
         success: false,
-
         message:
           "Shiprocket order does not exist",
       });
     }
-
 
     // -----------------------------------------------
     // CANCEL SHIPROCKET ORDER
@@ -699,9 +740,8 @@ const cancelShipment = async (
         order.shiprocket.orderId
       );
 
-
     // -----------------------------------------------
-    // UPDATE ORDER
+    // UPDATE ORDER STATUS
     // -----------------------------------------------
 
     order.shiprocket.status =
@@ -710,12 +750,13 @@ const cancelShipment = async (
     order.orderStatus =
       "CANCELLED";
 
-
     await order.save();
 
+    // -----------------------------------------------
+    // SUCCESS
+    // -----------------------------------------------
 
     return res.status(200).json({
-
       success: true,
 
       message:
@@ -740,21 +781,16 @@ const cancelShipment = async (
         orderStatus:
           order.orderStatus,
       },
-
     });
 
-
   } catch (error) {
-
     console.error(
       "Cancel Shipment Error:",
       error.response?.data ||
       error.message
     );
 
-
     return res.status(500).json({
-
       success: false,
 
       message:
@@ -763,7 +799,6 @@ const cancelShipment = async (
       error:
         error.response?.data ||
         error.message,
-
     });
   }
 };

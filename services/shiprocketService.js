@@ -15,14 +15,42 @@ let tokenExpiry = null;
 const getShiprocketToken = async () => {
   try {
 
-    // Reuse token if still valid
+    // ==========================================
+    // DEBUG: CHECK API USER EMAIL
+    // ==========================================
+
+    console.log(
+      "Shiprocket API Email:",
+      process.env.SHIPROCKET_EMAIL
+    );
+
+
+    // ==========================================
+    // REUSE TOKEN IF STILL VALID
+    // ==========================================
+
     if (
       shiprocketToken &&
       tokenExpiry &&
       Date.now() < tokenExpiry
     ) {
+
+      console.log(
+        "Using existing Shiprocket token"
+      );
+
       return shiprocketToken;
     }
+
+
+    // ==========================================
+    // GENERATE NEW SHIPROCKET TOKEN
+    // ==========================================
+
+    console.log(
+      "Generating NEW Shiprocket token..."
+    );
+
 
     const response = await axios.post(
       `${BASE_URL}/auth/login`,
@@ -37,25 +65,42 @@ const getShiprocketToken = async () => {
       }
     );
 
+
+    // ==========================================
+    // CHECK TOKEN
+    // ==========================================
+
     if (!response.data.token) {
       throw new Error(
         "Shiprocket token not received"
       );
     }
 
-    shiprocketToken = response.data.token;
+
+    console.log(
+      "NEW Shiprocket token generated successfully"
+    );
+
+
+    shiprocketToken =
+      response.data.token;
+
 
     // Keep token for slightly less than expiry
     tokenExpiry =
-      Date.now() + 9 * 24 * 60 * 60 * 1000;
+      Date.now() +
+      9 * 24 * 60 * 60 * 1000;
+
 
     return shiprocketToken;
+
 
   } catch (error) {
 
     console.error(
       "Shiprocket authentication error:",
-      error.response?.data || error.message
+      error.response?.data ||
+      error.message
     );
 
     throw error;
@@ -174,6 +219,19 @@ const createShiprocketOrder = async (orderData) => {
   }
 };
 
+// ==========================================
+// CANCEL SHIPROCKET ORDER
+// ==========================================
+
+const cancelShiprocketOrder = async (orderId) => {
+  return await shiprocketRequest(
+    "POST",
+    "/orders/cancel",
+    {
+      ids: [orderId]
+    }
+  );
+};
 
 // ==========================================
 // ASSIGN AWB
@@ -183,7 +241,6 @@ const generateAWB = async ({
   shipmentId,
   courierId
 }) => {
-
   const data = {
     shipment_id: shipmentId
   };
@@ -204,10 +261,7 @@ const generateAWB = async ({
 // GENERATE PICKUP
 // ==========================================
 
-const generatePickup = async (
-  shipmentId
-) => {
-
+const generatePickup = async (shipmentId) => {
   return await shiprocketRequest(
     "POST",
     "/courier/generate/pickup",
@@ -235,10 +289,7 @@ const trackByAWB = async (awbCode) => {
 // TRACK BY SHIPMENT
 // ==========================================
 
-const trackByShipment = async (
-  shipmentId
-) => {
-
+const trackByShipment = async (shipmentId) => {
   return await shiprocketRequest(
     "GET",
     `/courier/track/shipment/${shipmentId}`
@@ -250,6 +301,7 @@ module.exports = {
   getShiprocketToken,
   checkServiceability,
   createShiprocketOrder,
+  cancelShiprocketOrder,
   generateAWB,
   generatePickup,
   trackByAWB,
