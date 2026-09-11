@@ -10,7 +10,7 @@ const addToWishlist = async (req, res) => {
   try {
     const userId = req.userId;
     const { productId } = req.params;
-    const { variantId } = req.body;
+    const { variantId } = req.body || {};
 
     if (!userId) {
       return res.status(401).json({
@@ -132,7 +132,7 @@ const removeFromWishlist = async (req, res) => {
   try {
     const userId = req.userId;
     const { productId } = req.params;
-    const { variantId } = req.body;
+    const { variantId } = req.body|| {};
 
     if (!userId) {
       return res.status(401).json({
@@ -251,7 +251,7 @@ const checkWishlist = async (req, res) => {
   try {
     const userId = req.userId;
     const { productId } = req.params;
-    const { variantId } = req.query;
+    const { variantId } = req.query|| {};
 
     if (!userId) {
       return res.status(401).json({
@@ -312,7 +312,7 @@ const toggleWishlist = async (req, res) => {
   try {
     const userId = req.userId;
     const { productId } = req.params;
-    const { variantId } = req.body;
+    const { variantId } = req.body|| {};
 
     if (!userId) {
       return res.status(401).json({
