@@ -1,56 +1,65 @@
 const express = require("express");
 
 const {
-  getAllUsers,
-  getMyProfile,
-  updateMyProfile,
-  getDashboard,
-} = require("../controllers/userController");
+  getMyAddresses,
+  addAddress,
+  updateAddress,
+  deleteAddress,
+  setDefaultAddress,
+} = require("../controllers/addressController");
 
 const authMiddleware = require("../middleware/authMiddleware");
-const adminMiddleware = require("../middleware/adminMiddleware");
 
 const router = express.Router();
 
 // ==========================================
-// CUSTOMER - DASHBOARD
+// GET ALL MY ADDRESSES
 // ==========================================
 
 router.get(
-  "/dashboard",
+  "/",
   authMiddleware,
-  getDashboard
+  getMyAddresses
 );
 
 // ==========================================
-// CUSTOMER - MY PROFILE
+// ADD ADDRESS
 // ==========================================
 
-router.get(
-  "/profile",
+router.post(
+  "/",
   authMiddleware,
-  getMyProfile
+  addAddress
 );
 
 // ==========================================
-// CUSTOMER - UPDATE PROFILE
+// UPDATE ADDRESS
 // ==========================================
 
 router.put(
-  "/profile",
+  "/:id",
   authMiddleware,
-  updateMyProfile
+  updateAddress
 );
 
 // ==========================================
-// ADMIN - GET ALL USERS
+// DELETE ADDRESS
 // ==========================================
 
-router.get(
-  "/all",
+router.delete(
+  "/:id",
   authMiddleware,
-  adminMiddleware,
-  getAllUsers
+  deleteAddress
+);
+
+// ==========================================
+// SET DEFAULT ADDRESS
+// ==========================================
+
+router.patch(
+  "/:id/default",
+  authMiddleware,
+  setDefaultAddress
 );
 
 module.exports = router;

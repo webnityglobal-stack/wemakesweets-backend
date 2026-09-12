@@ -1,4 +1,5 @@
 // controllers/orderController.js
+const mongoose = require("mongoose");
 
 const Order = require("../models/order");
 const Product = require("../models/product");
@@ -908,62 +909,35 @@ const createOrder = async (req, res) => {
 // =====================================================
 
 const getMyOrders = async (req, res) => {
-
   try {
-
-    const orders =
-      await Order.find({
-
-        user:
-          req.user._id,
-
-      })
-
-        .populate(
-          "items.product",
-          "name price images sku"
-        )
-
-        .populate(
-          "paymentId"
-        )
-
-        .sort({
-          createdAt: -1,
-        });
-
+    const orders = await Order.find({
+      user: req.userId,
+    })
+      .populate(
+        "items.product",
+        "name price images sku"
+      )
+      .populate("paymentId")
+      .sort({
+        createdAt: -1,
+      });
 
     return res.status(200).json({
-
       success: true,
-
-      count:
-        orders.length,
-
+      count: orders.length,
       orders,
-
     });
-
-
   } catch (error) {
-
     console.error(
       "Get My Orders Error:",
       error
     );
 
-
     return res.status(500).json({
-
       success: false,
-
-      message:
-        "Unable to fetch orders",
-
+      message: "Unable to fetch orders",
     });
-
   }
-
 };
 
 
@@ -972,72 +946,48 @@ const getMyOrders = async (req, res) => {
 // =====================================================
 
 const getOrderById = async (req, res) => {
-
   try {
+    const { id } = req.params;
 
-    const order =
-      await Order.findOne({
+    const query = {
+      user: req.userId,
+    };
 
-        _id:
-          req.params.id,
-
-        user:
-          req.user.userId,
-
-      })
-
-        .populate(
-          "items.product",
-          "name price images sku"
-        )
-
-        .populate(
-          "paymentId"
-        );
-
-
-    if (!order) {
-
-      return res.status(404).json({
-
-        success: false,
-
-        message:
-          "Order not found",
-
-      });
-
+    if (mongoose.isValidObjectId(id)) {
+      query._id = id;
+    } else {
+      query.orderId = id;
     }
 
+    const order = await Order.findOne(query)
+      .populate(
+        "items.product",
+        "name price images sku"
+      )
+      .populate("paymentId");
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
 
     return res.status(200).json({
-
       success: true,
-
       order,
-
     });
-
-
   } catch (error) {
-
     console.error(
       "Get Order Error:",
       error
     );
 
-
     return res.status(500).json({
-
       success: false,
-
-      message:
-        "Unable to fetch order",
-
+      message: "Unable to fetch order",
     });
-
   }
-
 };
 
 

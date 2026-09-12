@@ -20,6 +20,7 @@ app.use(
     origin: [
       "https://wemakesweets.vercel.app",
       "http://localhost:5173",
+      "https://we-make-sweets-admin.vercel.app"
     ],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -131,6 +132,14 @@ app.use(
   require("./routes/cartRoutes")
 );
 
+// ====================================================
+// ADDRESS ROUTES
+// ====================================================
+
+app.use(
+  "/api/addresses",
+  require("./routes/addressRoutes")
+);
 
 // ====================================================
 // WISHLIST ROUTES
