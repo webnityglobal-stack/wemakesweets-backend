@@ -28,6 +28,116 @@ const getAllUsers = async (req, res) => {
   }
 };
 
+const getAccount = async (req, res) => {
+  try {
+    const userId = req.userId;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "User not authenticated",
+      });
+    }
+
+    // 1. USER PROFILE
+    const user = await User.findById(userId).select(
+      "-password -resetPasswordToken -resetPasswordExpire"
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // 2. ORDERS
+    const orders = await Order.find({
+      user: userId,
+    })
+      .populate(
+        "items.product",
+        "name price images sku"
+      )
+      .populate("paymentId")
+      .sort({ createdAt: -1 });
+
+    // 3. WISHLIST
+    const wishlist = await Wishlist.findOne({
+      user: userId,
+    }).populate(
+      "products.product",
+      "name price images sku"
+    );
+
+    // 4. ADDRESSES
+    const addresses = await Address.find({
+      user: userId,
+    }).sort({
+      isDefault: -1,
+      createdAt: -1,
+    });
+
+    // 5. STATS
+    const totalOrders = orders.length;
+
+    const inTransit = orders.filter((order) =>
+      ["PROCESSING", "SHIPPED"].includes(
+        order.orderStatus
+      )
+    ).length;
+
+    const wishlistCount =
+      wishlist?.products?.length || 0;
+
+    const addressCount = addresses.length;
+
+    // 6. RESPONSE
+    return res.status(200).json({
+      success: true,
+
+      account: {
+        profile: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          role: user.role,
+          createdAt: user.createdAt,
+        },
+
+        stats: {
+          totalOrders,
+          inTransit,
+          wishlist: wishlistCount,
+          addresses: addressCount,
+        },
+
+        orders,
+
+        wishlist: wishlist
+          ? {
+              _id: wishlist._id,
+              products: wishlist.products,
+            }
+          : {
+              _id: null,
+              products: [],
+            },
+
+        addresses,
+      },
+    });
+  } catch (error) {
+    console.error("Get Account Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to fetch account",
+    });
+  }
+};
+
 // ==========================================
 // GET MY PROFILE
 // ==========================================
@@ -81,8 +191,9 @@ const updateMyProfile = async (req, res) => {
       });
     }
 
-    const { name, phone } = req.body;
+    const { name, phone, email } = req.body;
 
+    // Name validation
     if (!name || !name.trim()) {
       return res.status(400).json({
         success: false,
@@ -90,6 +201,7 @@ const updateMyProfile = async (req, res) => {
       });
     }
 
+    // Phone validation
     if (!phone || !phone.trim()) {
       return res.status(400).json({
         success: false,
@@ -97,24 +209,51 @@ const updateMyProfile = async (req, res) => {
       });
     }
 
+    // Email validation
+    if (!email || !email.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Email is required",
+      });
+    }
+
+    const trimmedName = name.trim();
+    const trimmedPhone = phone.trim();
+    const trimmedEmail = email.trim().toLowerCase();
+
     // Check if phone is already used by another user
-    const existingUser = await User.findOne({
-      phone: phone.trim(),
+    const existingPhoneUser = await User.findOne({
+      phone: trimmedPhone,
       _id: { $ne: userId },
     });
 
-    if (existingUser) {
+    if (existingPhoneUser) {
       return res.status(400).json({
         success: false,
         message: "Phone number already registered",
       });
     }
 
+    // Check if email is already used by another user
+    const existingEmailUser = await User.findOne({
+      email: trimmedEmail,
+      _id: { $ne: userId },
+    });
+
+    if (existingEmailUser) {
+      return res.status(400).json({
+        success: false,
+        message: "Email already registered",
+      });
+    }
+
+    // Update profile
     const user = await User.findByIdAndUpdate(
       userId,
       {
-        name: name.trim(),
-        phone: phone.trim(),
+        name: trimmedName,
+        phone: trimmedPhone,
+        email: trimmedEmail,
       },
       {
         new: true,
@@ -230,4 +369,5 @@ module.exports = {
   getMyProfile,
   updateMyProfile,
   getDashboard,
+  getAccount,
 };

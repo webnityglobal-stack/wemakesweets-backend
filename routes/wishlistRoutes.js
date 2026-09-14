@@ -21,7 +21,7 @@ router.get(
 );
 
 
-// Add product to wishlist
+// Add product variant
 router.post(
   "/add/:productId",
   authMiddleware,
@@ -29,7 +29,7 @@ router.post(
 );
 
 
-// Remove product from wishlist
+// Remove product variant
 router.delete(
   "/remove/:productId",
   authMiddleware,
@@ -37,7 +37,7 @@ router.delete(
 );
 
 
-// Check if product is wishlisted
+// Check product variant
 router.get(
   "/check/:productId",
   authMiddleware,
@@ -45,7 +45,7 @@ router.get(
 );
 
 
-// Toggle wishlist
+// Toggle product variant
 router.post(
   "/toggle/:productId",
   authMiddleware,

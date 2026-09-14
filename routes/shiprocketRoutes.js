@@ -35,14 +35,6 @@ router.post(
   pickupShipment
 );
 
-router.post("/test", (req, res) => {
-  res.json({
-    success: true,
-    message: "Shiprocket route is working"
-  });
-});
-
-
 // Track shipment
 router.get(
   "/track/:orderId",

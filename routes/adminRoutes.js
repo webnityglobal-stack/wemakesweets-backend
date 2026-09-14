@@ -1,10 +1,11 @@
 const express = require("express");
 
-const router = express.Router();
-
 const {
-  getDashboard,
+  getAdminDashboard,
   getAllOrders,
+  getAdminOrderById,
+  updateAdminOrderStatus,
+  cancelAdminOrder,
   getAllCustomers,
   getSalesAnalytics,
   getTopProducts,
@@ -12,26 +13,30 @@ const {
   getAllSubAdmins,
   updateSubAdmin,
   deleteSubAdmin,
+ getPaymentSummary,
+ getSalesReport,  
 } = require("../controllers/adminController");
 
 const authMiddleware = require("../middleware/authMiddleware");
 const adminMiddleware = require("../middleware/adminMiddleware");
 
+const router = express.Router();
+
 
 // ========================================
-// ADMIN DASHBOARD
+// DASHBOARD
 // ========================================
 
 router.get(
   "/dashboard",
   authMiddleware,
   adminMiddleware,
-  getDashboard
+  getAdminDashboard
 );
 
 
 // ========================================
-// ALL ORDERS
+// ORDERS
 // ========================================
 
 router.get(
@@ -41,9 +46,30 @@ router.get(
   getAllOrders
 );
 
+router.get(
+  "/orders/:id",
+  authMiddleware,
+  adminMiddleware,
+  getAdminOrderById
+);
+
+router.put(
+  "/orders/status/:id",
+  authMiddleware,
+  adminMiddleware,
+  updateAdminOrderStatus
+);
+
+router.put(
+  "/orders/cancel/:id",
+  authMiddleware,
+  adminMiddleware,
+  cancelAdminOrder
+);
+
 
 // ========================================
-// ALL CUSTOMERS
+// CUSTOMERS
 // ========================================
 
 router.get(
@@ -77,11 +103,11 @@ router.get(
   getTopProducts
 );
 
+
 // ========================================
-// SUB-ADMIN MANAGEMENT
+// SUB ADMINS
 // ========================================
 
-// Create subadmin
 router.post(
   "/subadmins",
   authMiddleware,
@@ -89,7 +115,6 @@ router.post(
   createSubAdmin
 );
 
-// Get all subadmins
 router.get(
   "/subadmins",
   authMiddleware,
@@ -97,7 +122,6 @@ router.get(
   getAllSubAdmins
 );
 
-// Update subadmin
 router.put(
   "/subadmins/:id",
   authMiddleware,
@@ -105,7 +129,6 @@ router.put(
   updateSubAdmin
 );
 
-// Delete subadmin
 router.delete(
   "/subadmins/:id",
   authMiddleware,
@@ -113,5 +136,24 @@ router.delete(
   deleteSubAdmin
 );
 
+// ========================================
+// PAYMENT SUMMARY
+// ======================================== 
+router.get(
+  "/payment-summary",
+  authMiddleware,
+  adminMiddleware,
+  getPaymentSummary
+);
+
+// ========================================
+// SALES REPORT
+// ========================================
+router.get(
+  "/reports/sales",
+  authMiddleware,
+  adminMiddleware,
+  getSalesReport
+);
 
 module.exports = router;

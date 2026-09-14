@@ -46,6 +46,7 @@ const variantSchema = new mongoose.Schema(
   {
     shiprocketId: {
       type: Number,
+      required: true,
       unique: true,
       index: true,
     },
@@ -161,6 +162,7 @@ const productSchema = new mongoose.Schema(
   {
     shiprocketId: {
       type: Number,
+      required: true,
       unique: true,
       index: true,
     },
@@ -227,12 +229,17 @@ const productSchema = new mongoose.Schema(
       },
     ],
 
-    highlights: [
-      {
-        type: String,
-        trim: true,
-      },
-    ],
+    highlights: {
+      type: [String],
+      default: [
+        "100% Natural Ingredients",
+        "Sweetened With Dates",
+        "No Palm Oil",
+        "Rich In Fiber",
+        "No Artificial Preservatives",
+        "Made In India",
+      ],
+    },
 
     ingredients: [
       {

@@ -73,6 +73,11 @@ const addProductToCollection = async (req, res) => {
       await collection.save();
     }
 
+    if (!product.collections.includes(collection._id)) {
+      product.collections.push(collection._id);
+      await product.save();
+    }
+
     res.status(200).json({
       success: true,
       message: "Product added to collection successfully",

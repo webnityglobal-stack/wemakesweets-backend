@@ -1,11 +1,24 @@
-let counter = 0;
+const Product = require("../models/product");
 
-const generateShiprocketId = () => {
-  const timestamp = Date.now();
+const generateShiprocketId = async () => {
+  const MIN = 1000000000;
+  const MAX = 9999999999;
 
-  counter = (counter + 1) % 100;
+  let shiprocketId;
+  let exists = true;
 
-  return timestamp * 100 + counter;
+  while (exists) {
+    shiprocketId =
+      Math.floor(
+        Math.random() * (MAX - MIN + 1)
+      ) + MIN;
+
+    exists = await Product.exists({
+      shiprocketId,
+    });
+  }
+
+  return shiprocketId;
 };
 
 module.exports = generateShiprocketId;

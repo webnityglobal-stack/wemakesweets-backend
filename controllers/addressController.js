@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const Address = require("../models/address");
+const User = require("../models/user");
 
 // ==========================================
 // GET MY ADDRESSES
@@ -39,10 +40,19 @@ const addAddress = async (req, res) => {
   try {
     const userId = req.userId;
 
+    // Get logged-in user's profile
+    const user = await User.findById(userId).select(
+      "name email phone"
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
     const {
-      name,
-      phone,
-      email,
       address,
       address2,
       city,
@@ -52,9 +62,8 @@ const addAddress = async (req, res) => {
       isDefault,
     } = req.body;
 
+    // Required address fields
     if (
-      !name ||
-      !phone ||
       !address ||
       !city ||
       !state ||
@@ -63,21 +72,23 @@ const addAddress = async (req, res) => {
       return res.status(400).json({
         success: false,
         message:
-          "Name, phone, address, city, state and pincode are required",
+          "Address, city, state and pincode are required",
       });
     }
 
-    // Check existing addresses
-    const existingCount = await Address.countDocuments({
-      user: userId,
-    });
+    // Count existing addresses
+    const existingCount =
+      await Address.countDocuments({
+        user: userId,
+      });
 
-    // First address automatically becomes default
+    // First address automatically default
     const shouldBeDefault =
-      existingCount === 0 || isDefault === true;
+      existingCount === 0 ||
+      isDefault === true;
 
-    // If this address is default,
-    // remove default from previous addresses
+    // If new address is default,
+    // remove default from old addresses
     if (shouldBeDefault) {
       await Address.updateMany(
         {
@@ -91,17 +102,27 @@ const addAddress = async (req, res) => {
       );
     }
 
+    // Create address
     const newAddress = await Address.create({
       user: userId,
-      name,
-      phone,
-      email: email || "",
-      address,
-      address2: address2 || "",
-      city,
-      state,
-      pincode,
-      country: country || "India",
+
+      // Automatically taken from User
+      name: user.name,
+      phone: user.phone,
+      email: user.email,
+
+      // Address details
+      address: address.trim(),
+      address2: address2
+        ? address2.trim()
+        : "",
+      city: city.trim(),
+      state: state.trim(),
+      pincode: pincode.trim(),
+      country: country
+        ? country.trim()
+        : "India",
+
       isDefault: shouldBeDefault,
     });
 
@@ -111,7 +132,10 @@ const addAddress = async (req, res) => {
       address: newAddress,
     });
   } catch (error) {
-    console.error("Add Address Error:", error);
+    console.error(
+      "Add Address Error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -148,45 +172,52 @@ const updateAddress = async (req, res) => {
       });
     }
 
+    // Only address-related fields can be updated
     const {
-      name,
-      phone,
-      email,
       address: addressLine,
       address2,
       city,
       state,
       pincode,
       country,
-      isDefault,
     } = req.body;
 
-    if (name !== undefined) address.name = name;
-    if (phone !== undefined) address.phone = phone;
-    if (email !== undefined) address.email = email;
-    if (addressLine !== undefined)
-      address.address = addressLine;
-    if (address2 !== undefined)
-      address.address2 = address2;
-    if (city !== undefined) address.city = city;
-    if (state !== undefined) address.state = state;
-    if (pincode !== undefined) address.pincode = pincode;
-    if (country !== undefined) address.country = country;
+    if (
+      addressLine === undefined &&
+      address2 === undefined &&
+      city === undefined &&
+      state === undefined &&
+      pincode === undefined &&
+      country === undefined
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "No address fields provided for update",
+      });
+    }
 
-    if (isDefault === true) {
-      await Address.updateMany(
-        {
-          user: userId,
-          _id: { $ne: id },
-        },
-        {
-          $set: {
-            isDefault: false,
-          },
-        }
-      );
+    if (addressLine !== undefined) {
+      address.address = addressLine.trim();
+    }
 
-      address.isDefault = true;
+    if (address2 !== undefined) {
+      address.address2 = address2.trim();
+    }
+
+    if (city !== undefined) {
+      address.city = city.trim();
+    }
+
+    if (state !== undefined) {
+      address.state = state.trim();
+    }
+
+    if (pincode !== undefined) {
+      address.pincode = pincode.trim();
+    }
+
+    if (country !== undefined) {
+      address.country = country.trim();
     }
 
     await address.save();

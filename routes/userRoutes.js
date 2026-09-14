@@ -5,6 +5,7 @@ const {
   getMyProfile,
   updateMyProfile,
   getDashboard,
+    getAccount,
 } = require("../controllers/userController");
 
 const authMiddleware = require("../middleware/authMiddleware");
@@ -31,6 +32,17 @@ router.get(
   authMiddleware,
   getMyProfile
 );
+
+
+//=========================================
+// GET ACCOUNT DETAILS
+//  =========================================
+router.get(
+  "/account",
+  authMiddleware,
+  getAccount
+);
+
 
 // ==========================================
 // CUSTOMER - UPDATE PROFILE
