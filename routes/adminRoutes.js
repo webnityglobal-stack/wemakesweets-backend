@@ -14,7 +14,8 @@ const {
   updateSubAdmin,
   deleteSubAdmin,
  getPaymentSummary,
- getSalesReport,  
+ getSalesReport,
+  getCodPrepaidCancelReport,  
 } = require("../controllers/adminController");
 
 const authMiddleware = require("../middleware/authMiddleware");
@@ -154,6 +155,16 @@ router.get(
   authMiddleware,
   adminMiddleware,
   getSalesReport
+);
+
+// ========================================
+// COD, PREPAID, CANCEL REPORT
+// ========================================
+router.get(
+  "/reports/cod-prepaid-cancel",
+  authMiddleware,
+  adminMiddleware,
+  getCodPrepaidCancelReport
 );
 
 module.exports = router;

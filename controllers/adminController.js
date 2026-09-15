@@ -1377,6 +1377,389 @@ const getAllCustomers =
     }
   };
 
+//=========================================== 
+//get cod prepaid cancel order summary  
+//===========================================
+
+const getCodPrepaidCancelReport = async (req, res) => {
+  try {
+    const { range = "30d", startDate, endDate } = req.query;
+
+    // ==========================================
+    // DATE RANGE
+    // ==========================================
+
+    let start;
+    let end = new Date();
+
+    if (range === "7d") {
+      start = new Date();
+      start.setDate(start.getDate() - 7);
+    } else if (range === "15d") {
+      start = new Date();
+      start.setDate(start.getDate() - 15);
+    } else if (range === "30d") {
+      start = new Date();
+      start.setDate(start.getDate() - 30);
+    } else if (range === "custom" && startDate && endDate) {
+      start = new Date(startDate);
+      end = new Date(endDate);
+
+      end.setHours(23, 59, 59, 999);
+    } else {
+      start = new Date();
+      start.setDate(start.getDate() - 30);
+    }
+
+    // ==========================================
+    // FETCH ORDERS
+    // ==========================================
+
+    const orders = await Order.find({
+      createdAt: {
+        $gte: start,
+        $lte: end,
+      },
+    }).lean();
+
+    // ==========================================
+    // BASIC COUNTS
+    // ==========================================
+
+    let codOrders = 0;
+    let codAmount = 0;
+
+    let prepaidOrders = 0;
+    let prepaidAmount = 0;
+
+    let cancelledOrders = 0;
+    let cancelledAmount = 0;
+
+    let rtoOrders = 0;
+
+    // ==========================================
+    // CANCELLATION REASONS
+    // ==========================================
+
+    const cancellationReasons = {};
+
+    // ==========================================
+    // MONTHLY DATA
+    // ==========================================
+
+    const monthlyData = {};
+
+    // ==========================================
+    // LOOP ORDERS
+    // ==========================================
+
+    orders.forEach((order) => {
+      const amount = Number(order.totalAmount || 0);
+
+      const paymentMethod =
+        String(order.paymentMethod || "").toUpperCase();
+
+      const orderStatus =
+        String(order.orderStatus || "").toUpperCase();
+
+      const rtoStatus =
+        String(order.shiprocket?.rtoStatus || "").toUpperCase();
+
+      const shiprocketStatus =
+        String(order.shiprocket?.status || "").toUpperCase();
+
+      // ========================================
+      // COD
+      // ========================================
+
+      if (paymentMethod === "COD") {
+        codOrders++;
+        codAmount += amount;
+      }
+
+      // ========================================
+      // PREPAID / ONLINE
+      // ========================================
+
+      if (
+        paymentMethod === "ONLINE" ||
+        paymentMethod === "PREPAID"
+      ) {
+        prepaidOrders++;
+        prepaidAmount += amount;
+      }
+
+      // ========================================
+      // CANCELLED
+      // ========================================
+
+      if (orderStatus === "CANCELLED") {
+        cancelledOrders++;
+        cancelledAmount += amount;
+
+        const reason =
+          order.cancellationReason ||
+          "Other";
+
+        cancellationReasons[reason] =
+          (cancellationReasons[reason] || 0) + 1;
+      }
+
+      // ========================================
+      // RTO
+      // ========================================
+
+      const isRTO =
+        rtoStatus === "RTO" ||
+        rtoStatus === "RTO_INITIATED" ||
+        rtoStatus === "RTO_DELIVERED" ||
+        shiprocketStatus === "RTO" ||
+        shiprocketStatus === "RTO_INITIATED" ||
+        shiprocketStatus === "RTO_DELIVERED";
+
+      if (isRTO) {
+        rtoOrders++;
+      }
+
+      // ========================================
+      // MONTHLY TREND
+      // ========================================
+
+      const date = new Date(order.createdAt);
+
+      const monthKey =
+        date.toLocaleString("en-IN", {
+          month: "short",
+          year: "numeric",
+          timeZone: "Asia/Kolkata",
+        });
+
+      if (!monthlyData[monthKey]) {
+        monthlyData[monthKey] = {
+          month: monthKey,
+          codOrders: 0,
+          codAmount: 0,
+          prepaidOrders: 0,
+          prepaidAmount: 0,
+          cancelledOrders: 0,
+          cancelledAmount: 0,
+          rtoOrders: 0,
+        };
+      }
+
+      if (paymentMethod === "COD") {
+        monthlyData[monthKey].codOrders++;
+        monthlyData[monthKey].codAmount += amount;
+      }
+
+      if (
+        paymentMethod === "ONLINE" ||
+        paymentMethod === "PREPAID"
+      ) {
+        monthlyData[monthKey].prepaidOrders++;
+        monthlyData[monthKey].prepaidAmount += amount;
+      }
+
+      if (orderStatus === "CANCELLED") {
+        monthlyData[monthKey].cancelledOrders++;
+        monthlyData[monthKey].cancelledAmount += amount;
+      }
+
+      if (isRTO) {
+        monthlyData[monthKey].rtoOrders++;
+      }
+    });
+
+    // ==========================================
+    // TOTAL ORDERS
+    // ==========================================
+
+    const totalPaymentOrders =
+      codOrders + prepaidOrders;
+
+    // ==========================================
+    // PAYMENT SHARES
+    // ==========================================
+
+    const codShare =
+      totalPaymentOrders > 0
+        ? Number(
+            ((codOrders / totalPaymentOrders) * 100).toFixed(2)
+          )
+        : 0;
+
+    const prepaidShare =
+      totalPaymentOrders > 0
+        ? Number(
+            ((prepaidOrders / totalPaymentOrders) * 100).toFixed(2)
+          )
+        : 0;
+
+    // ==========================================
+    // RTO RATE
+    // ==========================================
+
+    const rtoRate =
+      totalPaymentOrders > 0
+        ? Number(
+            ((rtoOrders / totalPaymentOrders) * 100).toFixed(2)
+          )
+        : 0;
+
+    // ==========================================
+    // SUCCESS RATE
+    // ==========================================
+
+    const getSuccessRate = (method) => {
+      const methodOrders = orders.filter((order) => {
+        const paymentMethod =
+          String(order.paymentMethod || "").toUpperCase();
+
+        return method === "COD"
+          ? paymentMethod === "COD"
+          : paymentMethod === "ONLINE" ||
+              paymentMethod === "PREPAID";
+      });
+
+      if (!methodOrders.length) {
+        return 0;
+      }
+
+      const successful = methodOrders.filter((order) => {
+        const status =
+          String(order.orderStatus || "").toUpperCase();
+
+        return status === "DELIVERED";
+      }).length;
+
+      return Number(
+        ((successful / methodOrders.length) * 100).toFixed(2)
+      );
+    };
+
+    const codSuccessRate =
+      getSuccessRate("COD");
+
+    const prepaidSuccessRate =
+      getSuccessRate("PREPAID");
+
+    // ==========================================
+    // CANCELLATION REASON FORMAT
+    // ==========================================
+
+    const cancellationReasonReport =
+      Object.entries(cancellationReasons)
+        .map(([reason, count]) => ({
+          reason,
+          orders: count,
+          percentage:
+            cancelledOrders > 0
+              ? Number(
+                  ((count / cancelledOrders) * 100).toFixed(1)
+                )
+              : 0,
+        }))
+        .sort((a, b) => b.orders - a.orders);
+
+    // ==========================================
+    // MONTHLY SORT
+    // ==========================================
+
+    const monthlyTrends =
+      Object.values(monthlyData);
+
+    // ==========================================
+    // FINAL RESPONSE
+    // ==========================================
+
+    return res.status(200).json({
+      success: true,
+
+      filters: {
+        range,
+        startDate: start,
+        endDate: end,
+      },
+
+      summary: {
+        cod: {
+          orders: codOrders,
+          amount: Number(codAmount.toFixed(2)),
+          share: codShare,
+          successRate: codSuccessRate,
+          rtoRate: rtoRate,
+        },
+
+        prepaid: {
+          orders: prepaidOrders,
+          amount: Number(prepaidAmount.toFixed(2)),
+          share: prepaidShare,
+          successRate: prepaidSuccessRate,
+          rtoRate: rtoRate,
+        },
+
+        cancelled: {
+          orders: cancelledOrders,
+          lostValue: Number(
+            cancelledAmount.toFixed(2)
+          ),
+          percentage:
+            totalPaymentOrders > 0
+              ? Number(
+                  (
+                    (cancelledOrders /
+                      totalPaymentOrders) *
+                    100
+                  ).toFixed(2)
+                )
+              : 0,
+        },
+
+        rto: {
+          shipments: rtoOrders,
+          rate: rtoRate,
+        },
+      },
+
+      paymentComparison: {
+        prepaid: {
+          orders: prepaidOrders,
+          amount: Number(
+            prepaidAmount.toFixed(2)
+          ),
+          successRate: prepaidSuccessRate,
+          rtoRate: rtoRate,
+        },
+
+        cod: {
+          orders: codOrders,
+          amount: Number(
+            codAmount.toFixed(2)
+          ),
+          successRate: codSuccessRate,
+          rtoRate: rtoRate,
+        },
+      },
+
+      cancellationReasons:
+        cancellationReasonReport,
+
+      monthlyTrends,
+    });
+  } catch (error) {
+    console.error(
+      "COD Prepaid Cancel Report Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Unable to generate COD / Prepaid / Cancel report",
+      error: error.message,
+    });
+  }
+};
 
 
 // ========================================
@@ -2511,4 +2894,5 @@ module.exports = {
 
     getPaymentSummary,
     getSalesReport,
+    getCodPrepaidCancelReport,
 };

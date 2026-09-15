@@ -11,10 +11,10 @@ const orderItemSchema = new mongoose.Schema(
       ref: "Product",
       required: true,
     },
-     variantId: {
-    type: mongoose.Schema.Types.ObjectId,
-    default: null,
-  },
+    variantId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+    },
 
     name: {
       type: String,
@@ -170,6 +170,21 @@ const shiprocketSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // ADD THESE
+    rtoStatus: {
+      type: String,
+      default: null,
+    },
+
+    rtoReason: {
+      type: String,
+      default: null,
+    },
+
+    rtoDate: {
+      type: Date,
+      default: null,
+    },
   },
   {
     _id: false,
@@ -298,6 +313,16 @@ const orderSchema = new mongoose.Schema(
     shippingAddress: {
       type: shippingAddressSchema,
       required: true,
+    },
+    cancellationReason: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
+    cancelledAt: {
+      type: Date,
+      default: null,
     },
 
 
