@@ -519,15 +519,11 @@ const getAdminDashboard = async (req, res) => {
 
 // ========================================
 // GET ALL ORDERS FOR ADMIN
-// WITH PAGINATION + SEARCH + FILTER
+// PAGINATION + GLOBAL SEARCH + FILTER
 // ========================================
 
-const getAllOrders = async (
-  req,
-  res
-) => {
+const getAllOrders = async (req, res) => {
   try {
-
     const {
       page = 1,
       limit = 20,
@@ -535,7 +531,6 @@ const getAllOrders = async (
       paymentMethod,
       search,
     } = req.query;
-
 
     // =================================================
     // PAGINATION
@@ -546,42 +541,29 @@ const getAllOrders = async (
       1
     );
 
-
     const limitNumber = Math.min(
-      Math.max(
-        parseInt(limit) || 20,
-        1
-      ),
+      Math.max(parseInt(limit) || 20, 1),
       100
     );
 
-
     const skip =
-      (pageNumber - 1) *
-      limitNumber;
-
+      (pageNumber - 1) * limitNumber;
 
     // =================================================
-    // FILTER
+    // BASE FILTER
     // =================================================
 
     const filter = {};
-
 
     // =================================================
     // STATUS FILTER
     // =================================================
 
-    if (
-      status &&
-      status.trim()
-    ) {
-      filter.orderStatus =
-        status
-          .trim()
-          .toUpperCase();
+    if (status && status.trim()) {
+      filter.orderStatus = status
+        .trim()
+        .toUpperCase();
     }
-
 
     // =================================================
     // PAYMENT METHOD FILTER
@@ -597,80 +579,266 @@ const getAllOrders = async (
           .toUpperCase();
     }
 
-
     // =================================================
-    // SEARCH
-    // ORDER ID / CUSTOMER NAME / EMAIL / PHONE
+    // GLOBAL SEARCH
     // =================================================
 
-    if (
-      search &&
-      search.trim()
-    ) {
-
+    if (search && search.trim()) {
       const searchValue =
         search.trim();
 
+      // Escape regex special characters
+      const escapedSearch =
+        searchValue.replace(
+          /[.*+?^${}()|[\]\\]/g,
+          "\\$&"
+        );
 
-      const users =
+      const regex = new RegExp(
+        escapedSearch,
+        "i"
+      );
+
+      // =================================================
+      // SEARCH USERS
+      // =================================================
+
+      const matchingUsers =
         await User.find({
           $or: [
             {
-              name: {
-                $regex:
-                  searchValue,
-                $options:
-                  "i",
-              },
+              name: regex,
             },
-
             {
-              email: {
-                $regex:
-                  searchValue,
-                $options:
-                  "i",
-              },
+              email: regex,
             },
-
             {
-              phone: {
-                $regex:
-                  searchValue,
-                $options:
-                  "i",
-              },
+              phone: regex,
             },
           ],
         }).select("_id");
 
-
       const userIds =
-        users.map(
-          (user) =>
-            user._id
+        matchingUsers.map(
+          (user) => user._id
         );
 
+      // =================================================
+      // SEARCH PRODUCTS
+      // =================================================
 
-      filter.$or = [
+      const matchingProducts =
+        await Product.find({
+          $or: [
+            {
+              name: regex,
+            },
+            {
+              slug: regex,
+            },
+            {
+              sku: regex,
+            },
+            {
+              shiprocketId:
+                !isNaN(Number(searchValue))
+                  ? Number(searchValue)
+                  : -1,
+            },
+          ],
+        }).select("_id");
+
+      const productIds =
+        matchingProducts.map(
+          (product) => product._id
+        );
+
+      // =================================================
+      // NUMERIC SEARCH
+      // =================================================
+
+      const numericValue =
+        Number(searchValue);
+
+      const isNumeric =
+        !Number.isNaN(numericValue);
+
+      // =================================================
+      // GLOBAL SEARCH CONDITIONS
+      // =================================================
+
+      const searchConditions = [
+
+        // ---------------------------------------------
+        // ORDER ID
+        // ---------------------------------------------
+
         {
-          orderId: {
-            $regex:
-              searchValue,
-            $options:
-              "i",
-          },
+          orderId: regex,
         },
 
+        // ---------------------------------------------
+        // CUSTOMER / USER
+        // ---------------------------------------------
+
+        ...(userIds.length > 0
+          ? [
+              {
+                user: {
+                  $in: userIds,
+                },
+              },
+            ]
+          : []),
+
+        // ---------------------------------------------
+        // SHIPPING NAME
+        // ---------------------------------------------
+
         {
-          user: {
-            $in:
-              userIds,
-          },
+          "shippingAddress.name":
+            regex,
         },
+
+        // ---------------------------------------------
+        // SHIPPING PHONE
+        // ---------------------------------------------
+
+        {
+          "shippingAddress.phone":
+            regex,
+        },
+
+        // ---------------------------------------------
+        // SHIPPING EMAIL
+        // ---------------------------------------------
+
+        {
+          "shippingAddress.email":
+            regex,
+        },
+
+        // ---------------------------------------------
+        // ADDRESS
+        // ---------------------------------------------
+
+        {
+          "shippingAddress.address":
+            regex,
+        },
+
+        // ---------------------------------------------
+        // CITY
+        // ---------------------------------------------
+
+        {
+          "shippingAddress.city":
+            regex,
+        },
+
+        // ---------------------------------------------
+        // STATE
+        // ---------------------------------------------
+
+        {
+          "shippingAddress.state":
+            regex,
+        },
+
+        // ---------------------------------------------
+        // PINCODE
+        // ---------------------------------------------
+
+        {
+          "shippingAddress.pincode":
+            regex,
+        },
+
+        // ---------------------------------------------
+        // COUNTRY
+        // ---------------------------------------------
+
+        {
+          "shippingAddress.country":
+            regex,
+        },
+
+        // ---------------------------------------------
+        // PRODUCT NAME
+        // ---------------------------------------------
+
+        {
+          "items.name":
+            regex,
+        },
+
+        // ---------------------------------------------
+        // PRODUCT SKU
+        // ---------------------------------------------
+
+        {
+          "items.sku":
+            regex,
+        },
+
+        // ---------------------------------------------
+        // PRODUCT ID
+        // ---------------------------------------------
+
+        ...(productIds.length > 0
+          ? [
+              {
+                "items.product": {
+                  $in: productIds,
+                },
+              },
+            ]
+          : []),
+
+        // ---------------------------------------------
+        // PAYMENT METHOD
+        // ---------------------------------------------
+
+        {
+          paymentMethod:
+            regex,
+        },
+
+        // ---------------------------------------------
+        // PAYMENT STATUS
+        // ---------------------------------------------
+
+        {
+          paymentStatus:
+            regex,
+        },
+
+        // ---------------------------------------------
+        // ORDER STATUS
+        // ---------------------------------------------
+
+        {
+          orderStatus:
+            regex,
+        },
+
+        // ---------------------------------------------
+        // ORDER AMOUNT
+        // ---------------------------------------------
+
+        ...(isNumeric
+          ? [
+              {
+                totalAmount:
+                  numericValue,
+              },
+            ]
+          : []),
       ];
-    }
 
+      filter.$or =
+        searchConditions;
+    }
 
     // =================================================
     // TOTAL ORDERS
@@ -680,7 +848,6 @@ const getAllOrders = async (
       await Order.countDocuments(
         filter
       );
-
 
     // =================================================
     // FETCH ORDERS
@@ -694,7 +861,7 @@ const getAllOrders = async (
         )
         .populate(
           "items.product",
-          "name price images sku"
+          "name salePrice mrp images slug"
         )
         .populate(
           "paymentId"
@@ -705,17 +872,15 @@ const getAllOrders = async (
         .skip(skip)
         .limit(limitNumber);
 
-
     // =================================================
-    // PAGINATION
+    // TOTAL PAGES
     // =================================================
 
     const totalPages =
       Math.ceil(
         totalOrders /
-        limitNumber
+          limitNumber
       );
-
 
     // =================================================
     // RESPONSE
@@ -747,7 +912,6 @@ const getAllOrders = async (
     });
 
   } catch (error) {
-
     console.error(
       "Get Admin Orders Error:",
       error
@@ -757,6 +921,7 @@ const getAllOrders = async (
       success: false,
       message:
         "Unable to fetch orders",
+      error: error.message,
     });
   }
 };
