@@ -400,7 +400,12 @@ const fetchProductsByCollection =
         ).trim();
 
       // ==========================================
-      // FIRST: FIND BY SHIPROCKET ID
+      // 1. FIND BY SHIPROCKET ID
+      // ==========================================
+      //
+      // We compare as string so Int32/Int64/Number
+      // values all work correctly.
+      //
       // ==========================================
 
       const numericCollectionId =
@@ -415,13 +420,20 @@ const fetchProductsByCollection =
       ) {
         collection =
           await Collection.findOne({
-            shiprocketId:
-              numericCollectionId
+            $expr: {
+              $eq: [
+                {
+                  $toString:
+                    "$shiprocketId"
+                },
+                collectionIdString
+              ]
+            }
           }).lean();
       }
 
       // ==========================================
-      // FALLBACK: FIND BY MONGO _id
+      // 2. FALLBACK: FIND BY MONGO _id
       // ==========================================
 
       if (
@@ -437,7 +449,7 @@ const fetchProductsByCollection =
       }
 
       // ==========================================
-      // NOT FOUND
+      // COLLECTION NOT FOUND
       // ==========================================
 
       if (!collection) {
@@ -459,7 +471,10 @@ const fetchProductsByCollection =
           ? collection.products
           : [];
 
-      // Agar collection me koi product nahi hai
+      // ==========================================
+      // NO PRODUCTS
+      // ==========================================
+
       if (productIds.length === 0) {
         return res.status(200).json({
           data: {
@@ -502,7 +517,7 @@ const fetchProductsByCollection =
         );
 
       // ==========================================
-      // FORMAT
+      // FORMAT PRODUCTS
       // ==========================================
 
       const formattedProducts =
@@ -595,58 +610,34 @@ const fetchCollections =
 
             return {
               // ==================================
-              // SHIPROCKET COLLECTION ID
+              // NUMERIC SHIPROCKET COLLECTION ID
               // ==================================
 
               id: Number(
                 collection.shiprocketId
               ),
 
-              // ==================================
-              // UPDATED DATE
-              // ==================================
-
               updated_at:
                 formatDate(
                   collection.updatedAt
                 ),
 
-              // ==================================
-              // DESCRIPTION
-              // ==================================
-
               body_html:
                 collection.description ||
                 "",
 
-              // ==================================
-              // SLUG
-              // ==================================
-
               handle:
                 collection.slug ||
                 "",
-
-              // ==================================
-              // IMAGE
-              // ==================================
 
               image: {
                 src:
                   collectionImage
               },
 
-              // ==================================
-              // COLLECTION NAME
-              // ==================================
-
               title:
                 collection.name ||
                 "",
-
-              // ==================================
-              // CREATED DATE
-              // ==================================
 
               created_at:
                 formatDate(
