@@ -31,18 +31,23 @@ const userSchema = new mongoose.Schema(
 
     role: {
       type: String,
-      enum: ["user", "admin","subadmin"],
+      enum: ["user", "admin", "subadmin"],
       default: "user",
     },
 
-    resetPasswordToken: {
+    resetPasswordOTP: {
       type: String,
       default: null,
     },
 
-    resetPasswordExpire: {
+    resetPasswordOTPExpire: {
       type: Date,
       default: null,
+    },
+
+    resetPasswordVerified: {
+      type: Boolean,
+      default: false,
     },
   },
   {

@@ -1,13 +1,11 @@
 const cors = require("cors");
 const express = require("express");
+const path = require("path");
 const errorMiddleware = require("./middleware/errorMiddleware");
 const catalogRoutes = require("./routes/catalogRoutes");
 const collectionRoutes = require(
   "./routes/collectionRoutes"
 );
-
-
-const path = require("path");
 
 const app = express();
 
