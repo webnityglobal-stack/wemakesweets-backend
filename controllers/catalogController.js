@@ -78,6 +78,29 @@ const getWeight = (product) => {
 };
 
 // =====================================================
+// VARIANT WEIGHT HELPER
+// =====================================================
+
+const getVariantWeight = (variant, product) => {
+  // First priority: variant weight
+  if (
+    variant?.weight !== null &&
+    variant?.weight !== undefined &&
+    variant?.weight !== ""
+  ) {
+    const variantWeight =
+      Number(variant.weight);
+
+    if (Number.isFinite(variantWeight)) {
+      return variantWeight;
+    }
+  }
+
+  // Fallback: product weight
+  return getWeight(product);
+};
+
+// =====================================================
 // OPTION VALUES
 // =====================================================
 
@@ -127,9 +150,6 @@ const formatProduct = (product, req) => {
   const productUpdatedAt =
     formatDate(product.updatedAt);
 
-  const productWeight =
-    getWeight(product);
-
   const variants =
     Array.isArray(product.variants)
       ? product.variants
@@ -140,13 +160,16 @@ const formatProduct = (product, req) => {
     // PRODUCT ID
     // ==========================================
 
-    id: Number(product.shiprocketId),
+    id: Number(
+      product.shiprocketId
+    ),
 
     // ==========================================
     // PRODUCT BASIC DETAILS
     // ==========================================
 
-    title: product.name || "",
+    title:
+      product.name || "",
 
     body_html:
       product.description || "",
@@ -172,81 +195,136 @@ const formatProduct = (product, req) => {
     // VARIANTS
     // ==========================================
 
-    variants: variants.map((variant) => {
-      const variantImage =
-        getImageUrl(
-          product.images?.[0],
-          req
-        );
+    variants: variants.map(
+      (variant) => {
 
-      return {
-        // ====================================
-        // UNIQUE VARIANT ID
-        // ====================================
+        const variantImage =
+          getImageUrl(
+            product.images?.[0],
+            req
+          );
 
-        id: Number(
-          variant.shiprocketId
-        ),
+        // ======================================
+        // GET ACTUAL VARIANT WEIGHT
+        // ======================================
 
-        title:
-          variant.title || "",
+        const variantWeight =
+          getVariantWeight(
+            variant,
+            product
+          );
 
-        price:
-          String(
-            variant.salePrice ?? 0
+        return {
+          // ====================================
+          // UNIQUE VARIANT ID
+          // ====================================
+
+          id: Number(
+            variant.shiprocketId
           ),
 
-        compare_at_price:
-          String(
-            variant.mrp ?? 0
-          ),
+          // ====================================
+          // VARIANT TITLE
+          // ====================================
 
-        sku:
-          variant.sku || "",
+          title:
+            variant.title || "",
 
-        created_at:
-          productCreatedAt,
+          // ====================================
+          // PRICE
+          // ====================================
 
-        updated_at:
-          productUpdatedAt,
+          price:
+            String(
+              variant.salePrice ?? 0
+            ),
 
-        taxable: true,
+          // ====================================
+          // MRP
+          // ====================================
 
-        quantity:
-          Number(
-            variant.stock ?? 0
-          ),
+          compare_at_price:
+            String(
+              variant.mrp ?? 0
+            ),
 
-        // Shiprocket expects grams
-        grams:
-          Number(
-            productWeight || 0
-          ),
+          // ====================================
+          // SKU
+          // ====================================
 
-        image: {
-          src: variantImage
-        },
+          sku:
+            variant.sku || "",
 
-        option_values:
-          getOptionValues(
-            variant
-          ),
+          // ====================================
+          // DATES
+          // ====================================
 
-        weight:
-          Number(
-            productWeight || 0
-          ),
+          created_at:
+            productCreatedAt,
 
-        weight_unit: "g"
-      };
-    }),
+          updated_at:
+            productUpdatedAt,
+
+          // ====================================
+          // TAXABLE
+          // ====================================
+
+          taxable: true,
+
+          // ====================================
+          // STOCK
+          // ====================================
+
+          quantity:
+            Number(
+              variant.stock ?? 0
+            ),
+
+          // ====================================
+          // WEIGHT IN GRAMS
+          // ====================================
+
+          grams:
+            variantWeight,
+
+          // ====================================
+          // IMAGE
+          // ====================================
+
+          image: {
+            src:
+              variantImage
+          },
+
+          // ====================================
+          // OPTION VALUES
+          // ====================================
+
+          option_values:
+            getOptionValues(
+              variant
+            ),
+
+          // ====================================
+          // WEIGHT
+          // ====================================
+
+          weight:
+            variantWeight,
+
+          weight_unit:
+            "g"
+        };
+      }
+    ),
 
     // ==========================================
     // PRODUCT IMAGE
     // ==========================================
 
     image: {
-      src: productImage
+      src:
+        productImage
     },
 
     // ==========================================
@@ -254,7 +332,9 @@ const formatProduct = (product, req) => {
     // ==========================================
 
     options:
-      getProductOptions(product)
+      getProductOptions(
+        product
+      )
   };
 };
 
@@ -264,13 +344,19 @@ const formatProduct = (product, req) => {
 
 const getPagination = (req) => {
   const page = Math.max(
-    parseInt(req.query.page, 10) || 1,
+    parseInt(
+      req.query.page,
+      10
+    ) || 1,
     1
   );
 
   const limit = Math.min(
     Math.max(
-      parseInt(req.query.limit, 10) || 100,
+      parseInt(
+        req.query.limit,
+        10
+      ) || 100,
       1
     ),
     100
@@ -301,7 +387,8 @@ const fetchProducts = async (
       page,
       limit,
       skip
-    } = getPagination(req);
+    } =
+      getPagination(req);
 
     const products =
       await Product.find({})
@@ -327,12 +414,14 @@ const fetchProducts = async (
     return res.status(200).json({
       data: {
         total,
+
         products:
           formattedProducts
       }
     });
 
   } catch (error) {
+
     console.error(
       "FETCH PRODUCTS ERROR:",
       error
@@ -340,8 +429,10 @@ const fetchProducts = async (
 
     return res.status(500).json({
       success: false,
+
       message:
         "Unable to fetch products",
+
       error:
         error.message
     });
@@ -360,7 +451,9 @@ const fetchProductsByCollection =
     req,
     res
   ) => {
+
     try {
+
       const {
         collection_id
       } = req.query;
@@ -375,8 +468,10 @@ const fetchProductsByCollection =
           collection_id
         ).trim()
       ) {
+
         return res.status(400).json({
           success: false,
+
           message:
             "collection_id is required"
         });
@@ -386,7 +481,8 @@ const fetchProductsByCollection =
         page,
         limit,
         skip
-      } = getPagination(req);
+      } =
+        getPagination(req);
 
       // ==========================================
       // FIND COLLECTION
@@ -402,11 +498,6 @@ const fetchProductsByCollection =
       // ==========================================
       // 1. FIND BY SHIPROCKET ID
       // ==========================================
-      //
-      // We compare as string so Int32/Int64/Number
-      // values all work correctly.
-      //
-      // ==========================================
 
       const numericCollectionId =
         Number(
@@ -418,6 +509,7 @@ const fetchProductsByCollection =
           numericCollectionId
         )
       ) {
+
         collection =
           await Collection.findOne({
             $expr: {
@@ -426,6 +518,7 @@ const fetchProductsByCollection =
                   $toString:
                     "$shiprocketId"
                 },
+
                 collectionIdString
               ]
             }
@@ -442,6 +535,7 @@ const fetchProductsByCollection =
           collectionIdString
         )
       ) {
+
         collection =
           await Collection.findById(
             collectionIdString
@@ -453,8 +547,10 @@ const fetchProductsByCollection =
       // ==========================================
 
       if (!collection) {
+
         return res.status(404).json({
           success: false,
+
           message:
             "Collection not found"
         });
@@ -475,10 +571,14 @@ const fetchProductsByCollection =
       // NO PRODUCTS
       // ==========================================
 
-      if (productIds.length === 0) {
+      if (
+        productIds.length === 0
+      ) {
+
         return res.status(200).json({
           data: {
             total: 0,
+
             products: []
           }
         });
@@ -490,7 +590,8 @@ const fetchProductsByCollection =
 
       const filter = {
         _id: {
-          $in: productIds
+          $in:
+            productIds
         }
       };
 
@@ -499,7 +600,9 @@ const fetchProductsByCollection =
       // ==========================================
 
       const products =
-        await Product.find(filter)
+        await Product.find(
+          filter
+        )
           .sort({
             updatedAt: -1
           })
@@ -536,12 +639,14 @@ const fetchProductsByCollection =
       return res.status(200).json({
         data: {
           total,
+
           products:
             formattedProducts
         }
       });
 
     } catch (error) {
+
       console.error(
         "COLLECTION PRODUCTS ERROR:",
         error
@@ -549,8 +654,10 @@ const fetchProductsByCollection =
 
       return res.status(500).json({
         success: false,
+
         message:
           "Unable to fetch collection products",
+
         error:
           error.message
       });
@@ -568,12 +675,15 @@ const fetchCollections =
     req,
     res
   ) => {
+
     try {
+
       const {
         page,
         limit,
         skip
-      } = getPagination(req);
+      } =
+        getPagination(req);
 
       // ==========================================
       // FETCH COLLECTIONS
@@ -602,6 +712,7 @@ const fetchCollections =
       const formattedCollections =
         collections.map(
           (collection) => {
+
             const collectionImage =
               getImageUrl(
                 collection.image,
@@ -609,35 +720,61 @@ const fetchCollections =
               );
 
             return {
+
               // ==================================
-              // NUMERIC SHIPROCKET COLLECTION ID
+              // NUMERIC SHIPROCKET ID
               // ==================================
 
-              id: Number(
-                collection.shiprocketId
-              ),
+              id:
+                Number(
+                  collection.shiprocketId
+                ),
+
+              // ==================================
+              // UPDATED DATE
+              // ==================================
 
               updated_at:
                 formatDate(
                   collection.updatedAt
                 ),
 
+              // ==================================
+              // DESCRIPTION
+              // ==================================
+
               body_html:
                 collection.description ||
                 "",
 
+              // ==================================
+              // HANDLE
+              // ==================================
+
               handle:
                 collection.slug ||
                 "",
+
+              // ==================================
+              // IMAGE
+              // ==================================
 
               image: {
                 src:
                   collectionImage
               },
 
+              // ==================================
+              // TITLE
+              // ==================================
+
               title:
                 collection.name ||
                 "",
+
+              // ==================================
+              // CREATED DATE
+              // ==================================
 
               created_at:
                 formatDate(
@@ -654,12 +791,14 @@ const fetchCollections =
       return res.status(200).json({
         data: {
           total,
+
           collections:
             formattedCollections
         }
       });
 
     } catch (error) {
+
       console.error(
         "FETCH COLLECTIONS ERROR:",
         error
@@ -667,8 +806,10 @@ const fetchCollections =
 
       return res.status(500).json({
         success: false,
+
         message:
           "Unable to fetch collections",
+
         error:
           error.message
       });

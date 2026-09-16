@@ -5,6 +5,41 @@ const fs = require("fs");
 const path = require("path");
 
 // =====================================================
+// NORMALIZE VARIANTS
+// =====================================================
+
+const normalizeVariants = (variants) => {
+  if (!Array.isArray(variants)) {
+    return [];
+  }
+
+  return variants.map((variant) => ({
+    ...variant,
+
+    shiprocketId:
+      Number(variant.shiprocketId),
+
+    title:
+      variant.title || "",
+
+    weight:
+      Number(variant.weight),
+
+    salePrice:
+      Number(variant.salePrice),
+
+    mrp:
+      Number(variant.mrp),
+
+    stock:
+      Number(variant.stock ?? 0),
+
+    sku:
+      variant.sku || "",
+  }));
+};
+
+// =====================================================
 // GET PRODUCT BY ID
 // =====================================================
 
@@ -12,34 +47,43 @@ const getProductById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const product = await Product.findById(id);
+    const product =
+      await Product.findById(id);
 
     if (!product) {
       return res.status(404).json({
         success: false,
-        message: "Product not found",
+        message:
+          "Product not found",
       });
     }
 
     return res.status(200).json({
       success: true,
-      message: "Product fetched successfully",
+      message:
+        "Product fetched successfully",
       product,
     });
   } catch (error) {
-    console.error("Get product by ID error:", error);
+    console.error(
+      "Get product by ID error:",
+      error
+    );
 
     if (error.name === "CastError") {
       return res.status(400).json({
         success: false,
-        message: "Invalid product ID",
+        message:
+          "Invalid product ID",
       });
     }
 
     return res.status(500).json({
       success: false,
-      message: "Server error",
-      error: error.message,
+      message:
+        "Server error",
+      error:
+        error.message,
     });
   }
 };
@@ -48,23 +92,32 @@ const getProductById = async (req, res) => {
 // GET ALL PRODUCTS
 // =====================================================
 
-const getAllProducts = async (req, res) => {
+const getAllProducts = async (
+  req,
+  res
+) => {
   try {
-    const products = await Product.find().sort({
-      createdAt: -1,
-    });
+    const products =
+      await Product.find().sort({
+        createdAt: -1,
+      });
 
     return res.status(200).json({
       success: true,
-      count: products.length,
+      count:
+        products.length,
       products,
     });
   } catch (error) {
-    console.error("Get Products Error:", error);
+    console.error(
+      "Get Products Error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
-      message: "Failed to fetch products",
+      message:
+        "Failed to fetch products",
     });
   }
 };
@@ -73,7 +126,10 @@ const getAllProducts = async (req, res) => {
 // ADD PRODUCT
 // =====================================================
 
-const addProduct = async (req, res) => {
+const addProduct = async (
+  req,
+  res
+) => {
   try {
     const {
       slug,
@@ -114,7 +170,8 @@ const addProduct = async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-        message: "Please fill all required fields",
+        message:
+          "Please fill all required fields",
       });
     }
 
@@ -122,14 +179,16 @@ const addProduct = async (req, res) => {
     // CHECK DUPLICATE SLUG
     // =================================================
 
-    const existingProduct = await Product.findOne({
-      slug,
-    });
+    const existingProduct =
+      await Product.findOne({
+        slug,
+      });
 
     if (existingProduct) {
       return res.status(400).json({
         success: false,
-        message: "Product already exists",
+        message:
+          "Product already exists",
       });
     }
 
@@ -137,7 +196,8 @@ const addProduct = async (req, res) => {
     // GENERATE UNIQUE SHIPROCKET ID
     // =================================================
 
-    const shiprocketId = await generateShiprocketId();
+    const shiprocketId =
+      await generateShiprocketId();
 
     console.log(
       "Generated Shiprocket Product ID:",
@@ -165,19 +225,23 @@ const addProduct = async (req, res) => {
 
     try {
       if (ingredients !== undefined) {
-        parsedIngredients = JSON.parse(ingredients);
+        parsedIngredients =
+          JSON.parse(ingredients);
       }
 
       if (nutrition !== undefined) {
-        parsedNutrition = JSON.parse(nutrition);
+        parsedNutrition =
+          JSON.parse(nutrition);
       }
 
       if (variants !== undefined) {
-        parsedVariants = JSON.parse(variants);
+        parsedVariants =
+          JSON.parse(variants);
       }
 
       if (coupons !== undefined) {
-        parsedCoupons = JSON.parse(coupons);
+        parsedCoupons =
+          JSON.parse(coupons);
       }
     } catch (parseError) {
       console.error(
@@ -191,6 +255,15 @@ const addProduct = async (req, res) => {
           "Invalid JSON format in ingredients, nutrition, variants or coupons",
       });
     }
+
+    // =================================================
+    // NORMALIZE VARIANTS
+    // =================================================
+
+    const normalizedVariants =
+      normalizeVariants(
+        parsedVariants
+      );
 
     // =================================================
     // CREATE PRODUCT DATA
@@ -207,16 +280,20 @@ const addProduct = async (req, res) => {
 
       description,
 
-      salePrice: Number(salePrice),
+      salePrice:
+        Number(salePrice),
 
-      mrp: Number(mrp),
+      mrp:
+        Number(mrp),
 
       rating:
-        rating !== undefined && rating !== ""
+        rating !== undefined &&
+        rating !== ""
           ? Number(rating)
           : 0,
 
-      stock: Number(stock),
+      stock:
+        Number(stock),
 
       isBestSeller:
         isBestSeller === "true" ||
@@ -224,9 +301,11 @@ const addProduct = async (req, res) => {
 
       images,
 
-      ingredients: parsedIngredients,
+      ingredients:
+        parsedIngredients,
 
-      nutrition: parsedNutrition,
+      nutrition:
+        parsedNutrition,
 
       weight,
 
@@ -235,11 +314,14 @@ const addProduct = async (req, res) => {
       storage,
 
       countryOfOrigin:
-        countryOfOrigin || "India",
+        countryOfOrigin ||
+        "India",
 
-      variants: parsedVariants,
+      variants:
+        normalizedVariants,
 
-      coupons: parsedCoupons,
+      coupons:
+        parsedCoupons,
     };
 
     // =================================================
@@ -252,7 +334,9 @@ const addProduct = async (req, res) => {
     ) {
       try {
         productData.highlights =
-          JSON.parse(highlights);
+          JSON.parse(
+            highlights
+          );
       } catch (error) {
         return res.status(400).json({
           success: false,
@@ -267,7 +351,9 @@ const addProduct = async (req, res) => {
     // =================================================
 
     const product =
-      await Product.create(productData);
+      await Product.create(
+        productData
+      );
 
     console.log(
       "Product created:",
@@ -299,8 +385,13 @@ const addProduct = async (req, res) => {
       // ADD PRODUCT TO COLLECTION
       // -----------------------------------------------
 
-      if (!Array.isArray(sweetsCollection.products)) {
-        sweetsCollection.products = [];
+      if (
+        !Array.isArray(
+          sweetsCollection.products
+        )
+      ) {
+        sweetsCollection.products =
+          [];
       }
 
       const productExistsInCollection =
@@ -310,7 +401,9 @@ const addProduct = async (req, res) => {
             String(product._id)
         );
 
-      if (!productExistsInCollection) {
+      if (
+        !productExistsInCollection
+      ) {
         sweetsCollection.products.push(
           product._id
         );
@@ -327,18 +420,27 @@ const addProduct = async (req, res) => {
       // ADD COLLECTION TO PRODUCT
       // -----------------------------------------------
 
-      if (!Array.isArray(product.collections)) {
-        product.collections = [];
+      if (
+        !Array.isArray(
+          product.collections
+        )
+      ) {
+        product.collections =
+          [];
       }
 
       const collectionExistsInProduct =
         product.collections.some(
           (collectionId) =>
             String(collectionId) ===
-            String(sweetsCollection._id)
+            String(
+              sweetsCollection._id
+            )
         );
 
-      if (!collectionExistsInProduct) {
+      if (
+        !collectionExistsInProduct
+      ) {
         product.collections.push(
           sweetsCollection._id
         );
@@ -357,7 +459,9 @@ const addProduct = async (req, res) => {
     // =================================================
 
     const finalProduct =
-      await Product.findById(product._id);
+      await Product.findById(
+        product._id
+      );
 
     console.log(
       "Final Product Collections:",
@@ -368,7 +472,8 @@ const addProduct = async (req, res) => {
       success: true,
       message:
         "Product added successfully",
-      product: finalProduct,
+      product:
+        finalProduct,
     });
   } catch (error) {
     console.error(
@@ -381,7 +486,10 @@ const addProduct = async (req, res) => {
     // =================================================
 
     if (error.code === 11000) {
-      if (error.keyPattern?.shiprocketId) {
+      if (
+        error.keyPattern
+          ?.shiprocketId
+      ) {
         return res.status(400).json({
           success: false,
           message:
@@ -389,7 +497,9 @@ const addProduct = async (req, res) => {
         });
       }
 
-      if (error.keyPattern?.slug) {
+      if (
+        error.keyPattern?.slug
+      ) {
         return res.status(400).json({
           success: false,
           message:
@@ -408,16 +518,21 @@ const addProduct = async (req, res) => {
     // MONGOOSE VALIDATION ERROR
     // =================================================
 
-    if (error.name === "ValidationError") {
+    if (
+      error.name ===
+      "ValidationError"
+    ) {
       return res.status(400).json({
         success: false,
-        message: error.message,
+        message:
+          error.message,
       });
     }
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        error.message,
     });
   }
 };
@@ -426,9 +541,13 @@ const addProduct = async (req, res) => {
 // UPDATE PRODUCT
 // =====================================================
 
-const updateProduct = async (req, res) => {
+const updateProduct = async (
+  req,
+  res
+) => {
   try {
-    const { id } = req.params;
+    const { id } =
+      req.params;
 
     // =================================================
     // FIND PRODUCT
@@ -440,7 +559,8 @@ const updateProduct = async (req, res) => {
     if (!product) {
       return res.status(404).json({
         success: false,
-        message: "Product not found",
+        message:
+          "Product not found",
       });
     }
 
@@ -476,7 +596,9 @@ const updateProduct = async (req, res) => {
       const existingProduct =
         await Product.findOne({
           slug,
-          _id: { $ne: id },
+          _id: {
+            $ne: id,
+          },
         });
 
       if (existingProduct) {
@@ -493,64 +615,97 @@ const updateProduct = async (req, res) => {
     // =================================================
 
     if (slug !== undefined) {
-      product.slug = slug;
+      product.slug =
+        slug;
     }
 
     if (name !== undefined) {
-      product.name = name;
+      product.name =
+        name;
     }
 
     if (
-      shortDescription !== undefined
+      shortDescription !==
+      undefined
     ) {
       product.shortDescription =
         shortDescription;
     }
 
-    if (description !== undefined) {
+    if (
+      description !==
+      undefined
+    ) {
       product.description =
         description;
     }
 
-    if (salePrice !== undefined) {
+    if (
+      salePrice !==
+      undefined
+    ) {
       product.salePrice =
         Number(salePrice);
     }
 
     if (mrp !== undefined) {
-      product.mrp = Number(mrp);
+      product.mrp =
+        Number(mrp);
     }
 
-    if (rating !== undefined) {
+    if (
+      rating !==
+      undefined
+    ) {
       product.rating =
         Number(rating);
     }
 
-    if (stock !== undefined) {
+    if (
+      stock !==
+      undefined
+    ) {
       product.stock =
         Number(stock);
     }
 
-    if (isBestSeller !== undefined) {
+    if (
+      isBestSeller !==
+      undefined
+    ) {
       product.isBestSeller =
-        isBestSeller === "true" ||
+        isBestSeller ===
+          "true" ||
         isBestSeller === true;
     }
 
-    if (weight !== undefined) {
-      product.weight = weight;
-    }
-
-    if (shelfLife !== undefined) {
-      product.shelfLife = shelfLife;
-    }
-
-    if (storage !== undefined) {
-      product.storage = storage;
+    if (
+      weight !==
+      undefined
+    ) {
+      product.weight =
+        weight;
     }
 
     if (
-      countryOfOrigin !== undefined
+      shelfLife !==
+      undefined
+    ) {
+      product.shelfLife =
+        shelfLife;
+    }
+
+    if (
+      storage !==
+      undefined
+    ) {
+      product.storage =
+        storage;
+    }
+
+    if (
+      countryOfOrigin !==
+      undefined
     ) {
       product.countryOfOrigin =
         countryOfOrigin;
@@ -562,11 +717,14 @@ const updateProduct = async (req, res) => {
 
     try {
       if (
-        highlights !== undefined &&
+        highlights !==
+          undefined &&
         highlights !== ""
       ) {
         product.highlights =
-          JSON.parse(highlights);
+          JSON.parse(
+            highlights
+          );
       }
     } catch (error) {
       return res.status(400).json({
@@ -581,9 +739,14 @@ const updateProduct = async (req, res) => {
     // =================================================
 
     try {
-      if (ingredients !== undefined) {
+      if (
+        ingredients !==
+        undefined
+      ) {
         product.ingredients =
-          JSON.parse(ingredients);
+          JSON.parse(
+            ingredients
+          );
       }
     } catch (error) {
       return res.status(400).json({
@@ -598,9 +761,14 @@ const updateProduct = async (req, res) => {
     // =================================================
 
     try {
-      if (nutrition !== undefined) {
+      if (
+        nutrition !==
+        undefined
+      ) {
         product.nutrition =
-          JSON.parse(nutrition);
+          JSON.parse(
+            nutrition
+          );
       }
     } catch (error) {
       return res.status(400).json({
@@ -615,9 +783,19 @@ const updateProduct = async (req, res) => {
     // =================================================
 
     try {
-      if (variants !== undefined) {
+      if (
+        variants !==
+        undefined
+      ) {
+        const parsedVariants =
+          JSON.parse(
+            variants
+          );
+
         product.variants =
-          JSON.parse(variants);
+          normalizeVariants(
+            parsedVariants
+          );
       }
     } catch (error) {
       return res.status(400).json({
@@ -632,9 +810,14 @@ const updateProduct = async (req, res) => {
     // =================================================
 
     try {
-      if (coupons !== undefined) {
+      if (
+        coupons !==
+        undefined
+      ) {
         product.coupons =
-          JSON.parse(coupons);
+          JSON.parse(
+            coupons
+          );
       }
     } catch (error) {
       return res.status(400).json({
@@ -661,7 +844,8 @@ const updateProduct = async (req, res) => {
         );
 
       product.images = [
-        ...(product.images || []),
+        ...(product.images ||
+          []),
         ...newImages,
       ];
     }
@@ -680,15 +864,22 @@ const updateProduct = async (req, res) => {
       // Product → Sweets
       // -----------------------------------------------
 
-      if (!Array.isArray(product.collections)) {
-        product.collections = [];
+      if (
+        !Array.isArray(
+          product.collections
+        )
+      ) {
+        product.collections =
+          [];
       }
 
       const collectionExists =
         product.collections.some(
           (collectionId) =>
             String(collectionId) ===
-            String(sweetsCollection._id)
+            String(
+              sweetsCollection._id
+            )
         );
 
       if (!collectionExists) {
@@ -701,8 +892,13 @@ const updateProduct = async (req, res) => {
       // Sweets → Product
       // -----------------------------------------------
 
-      if (!Array.isArray(sweetsCollection.products)) {
-        sweetsCollection.products = [];
+      if (
+        !Array.isArray(
+          sweetsCollection.products
+        )
+      ) {
+        sweetsCollection.products =
+          [];
       }
 
       const productExists =
@@ -736,13 +932,16 @@ const updateProduct = async (req, res) => {
     // =================================================
 
     const updatedProduct =
-      await Product.findById(product._id);
+      await Product.findById(
+        product._id
+      );
 
     return res.status(200).json({
       success: true,
       message:
         "Product updated successfully",
-      product: updatedProduct,
+      product:
+        updatedProduct,
     });
   } catch (error) {
     console.error(
@@ -755,7 +954,10 @@ const updateProduct = async (req, res) => {
     // =================================================
 
     if (error.code === 11000) {
-      if (error.keyPattern?.shiprocketId) {
+      if (
+        error.keyPattern
+          ?.shiprocketId
+      ) {
         return res.status(400).json({
           success: false,
           message:
@@ -763,7 +965,9 @@ const updateProduct = async (req, res) => {
         });
       }
 
-      if (error.keyPattern?.slug) {
+      if (
+        error.keyPattern?.slug
+      ) {
         return res.status(400).json({
           success: false,
           message:
@@ -782,7 +986,10 @@ const updateProduct = async (req, res) => {
     // VALIDATION ERROR
     // =================================================
 
-    if (error.name === "ValidationError") {
+    if (
+      error.name ===
+      "ValidationError"
+    ) {
       return res.status(400).json({
         success: false,
         message:
@@ -792,7 +999,8 @@ const updateProduct = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        error.message,
     });
   }
 };
@@ -801,9 +1009,13 @@ const updateProduct = async (req, res) => {
 // DELETE PRODUCT
 // =====================================================
 
-const deleteProduct = async (req, res) => {
+const deleteProduct = async (
+  req,
+  res
+) => {
   try {
-    const { id } = req.params;
+    const { id } =
+      req.params;
 
     // =================================================
     // FIND PRODUCT
@@ -815,7 +1027,8 @@ const deleteProduct = async (req, res) => {
     if (!product) {
       return res.status(404).json({
         success: false,
-        message: "Product not found",
+        message:
+          "Product not found",
       });
     }
 
@@ -825,11 +1038,13 @@ const deleteProduct = async (req, res) => {
 
     await Collection.updateMany(
       {
-        products: product._id,
+        products:
+          product._id,
       },
       {
         $pull: {
-          products: product._id,
+          products:
+            product._id,
         },
       }
     );
@@ -852,9 +1067,13 @@ const deleteProduct = async (req, res) => {
             );
 
           if (
-            fs.existsSync(imagePath)
+            fs.existsSync(
+              imagePath
+            )
           ) {
-            fs.unlinkSync(imagePath);
+            fs.unlinkSync(
+              imagePath
+            );
           }
         }
       );
@@ -864,7 +1083,9 @@ const deleteProduct = async (req, res) => {
     // DELETE PRODUCT
     // =================================================
 
-    await Product.findByIdAndDelete(id);
+    await Product.findByIdAndDelete(
+      id
+    );
 
     return res.status(200).json({
       success: true,
@@ -894,8 +1115,11 @@ const deleteProductImage = async (
   res
 ) => {
   try {
-    const { id } = req.params;
-    const { image } = req.body;
+    const { id } =
+      req.params;
+
+    const { image } =
+      req.body;
 
     // =================================================
     // CHECK IMAGE
@@ -929,7 +1153,9 @@ const deleteProductImage = async (
     // =================================================
 
     if (
-      !product.images.includes(image)
+      !product.images.includes(
+        image
+      )
     ) {
       return res.status(404).json({
         success: false,
@@ -944,7 +1170,8 @@ const deleteProductImage = async (
 
     product.images =
       product.images.filter(
-        (img) => img !== image
+        (img) =>
+          img !== image
       );
 
     await product.save();
@@ -961,9 +1188,13 @@ const deleteProductImage = async (
       );
 
     if (
-      fs.existsSync(imagePath)
+      fs.existsSync(
+        imagePath
+      )
     ) {
-      fs.unlinkSync(imagePath);
+      fs.unlinkSync(
+        imagePath
+      );
     }
 
     return res.status(200).json({
