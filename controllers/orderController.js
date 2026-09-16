@@ -9,6 +9,7 @@ const Payment = require("../models/payment");
 const {
   createShiprocketOrder,
 } = require("../services/shiprocketService");
+const whatsappService = require("../services/whatsappService");
 
 
 // =====================================================
@@ -695,6 +696,13 @@ const createOrder = async (req, res) => {
 
         await order.save();
 
+        // Trigger WhatsApp Status Notification
+        whatsappService
+          .sendOrderStatusNotification(order, "CONFIRMED")
+          .catch((waErr) =>
+            console.error("WhatsApp COD confirmation notification error:", waErr.message)
+          );
+
 
       } catch (shiprocketError) {
 
@@ -1232,6 +1240,13 @@ const updateOrderStatus = async (req, res) => {
 
 
     await order.save();
+
+    // Trigger WhatsApp Status Notification
+    whatsappService
+      .sendOrderStatusNotification(order, orderStatus)
+      .catch((waErr) =>
+        console.error("WhatsApp status update notification error:", waErr.message)
+      );
 
 
     return res.status(200).json({

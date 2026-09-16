@@ -5,6 +5,7 @@ const Payment = require("../models/payment");
 
 const { createCheckout } = require("../services/fastrrService");
 const { verifyHmac } = require("../utils/fastrrHmac");
+const whatsappService = require("../services/whatsappService");
 
 // =====================================================
 // HELPER: GET USER ID
@@ -404,6 +405,13 @@ const paymentSuccess = async (req, res) => {
         orderStatus: "CONFIRMED",
       }
     );
+
+    // Trigger WhatsApp Status Notification
+    whatsappService
+      .sendOrderStatusNotification(payment.order, "CONFIRMED")
+      .catch((waErr) =>
+        console.error("WhatsApp payment confirmation notification error:", waErr.message)
+      );
 
     return res.status(200).json({
       success: true,
@@ -823,6 +831,13 @@ const fastrrWebhook = async (req, res) => {
           orderStatus: "CONFIRMED",
         }
       );
+
+      // Trigger WhatsApp Status Notification
+      whatsappService
+        .sendOrderStatusNotification(payment.order, "CONFIRMED")
+        .catch((waErr) =>
+          console.error("WhatsApp webhook payment confirmation error:", waErr.message)
+        );
 
       console.log(
         "Payment successfully marked PAID"

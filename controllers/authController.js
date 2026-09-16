@@ -3,6 +3,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const sendEmail = require("../utils/sendEmail");
+const whatsappService = require("../services/whatsappService");
 
 // =====================================================
 // SIGNUP
@@ -76,6 +77,24 @@ const signup = async (req, res) => {
         expiresIn: "7d",
       }
     );
+
+    // Send Welcome WhatsApp Notification (wms_welcome template)
+    whatsappService
+      .sendWelcomeTemplate(user.phone, user.name)
+      .catch((waErr) =>
+        console.error("WhatsApp welcome template error:", waErr.message)
+      );
+
+    // Send Welcome Email
+    if (user.email) {
+      sendEmail(
+        user.email,
+        "Welcome to WeMake Sweets & Snacks! 🍬",
+        `Hi ${user.name},\n\nWelcome to WeMake Sweets & Snacks! We're delighted to have you with us.\n\nThank you for choosing WeMake Sweets & Snacks!`
+      ).catch((emailErr) =>
+        console.error("Welcome email sending error:", emailErr.message)
+      );
+    }
 
     return res.status(201).json({
       success: true,
@@ -447,6 +466,195 @@ const resetPassword = async (req, res) => {
 };
 
 // =====================================================
+// DUAL LOGIN - SEND OTP (WHATSAPP + EMAIL)
+// =====================================================
+
+const sendWhatsAppLoginOTP = async (req, res) => {
+  try {
+    const { phone, email, identifier } = req.body;
+    const input = String(identifier || phone || email || "").trim();
+
+    if (!input) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide a valid phone number or email",
+      });
+    }
+
+    const isEmail = input.includes("@");
+    let user = null;
+
+    if (isEmail) {
+      user = await User.findOne({ email: input.toLowerCase() });
+    } else {
+      const cleanedPhone = input.trim();
+      const stripped = cleanedPhone.replace(/^(\+?91)/, "");
+      user = await User.findOne({
+        $or: [
+          { phone: cleanedPhone },
+          { phone: stripped },
+          { phone: `+91${stripped}` },
+          { phone: `91${stripped}` },
+        ],
+      });
+    }
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "No account found with this details. Please sign up first.",
+      });
+    }
+
+    // Generate 6-digit numeric OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    user.loginOTP = otp;
+    user.loginOTPExpire = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
+    await user.save();
+
+    console.log(`🔐 Generated Login OTP for ${user.name} (${user.phone} / ${user.email}): ${otp}`);
+
+    const deliveryStatus = {
+      whatsapp: false,
+      email: false,
+    };
+
+    // 1. Send OTP via WhatsApp Template (wms_login_otp)
+    if (user.phone) {
+      try {
+        const waResponse = await whatsappService.sendLoginOtpTemplate(
+          user.phone,
+          otp
+        );
+        deliveryStatus.whatsapp = !!waResponse.success;
+      } catch (waErr) {
+        console.error("WhatsApp OTP error:", waErr.message);
+      }
+    }
+
+    // 2. Send SAME OTP via Email
+    if (user.email) {
+      try {
+        await sendEmail(
+          user.email,
+          "Your WeMake Sweets & Snacks Login Code",
+          `Hi ${user.name},\n\nYour WeMake Sweets & Snacks verification code is: ${otp}\n\nThis code is valid for 10 minutes.\nFor your security, please do not share this code with anyone.\n\nThank you,\nWeMake Sweets & Snacks Team`
+        );
+        deliveryStatus.email = true;
+      } catch (emailErr) {
+        console.error("Email OTP error:", emailErr.message);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Verification OTP has been sent to your WhatsApp and Email.",
+      delivery: deliveryStatus,
+    });
+  } catch (error) {
+    console.error("SEND OTP ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to send login OTP. Please try again.",
+    });
+  }
+};
+
+// =====================================================
+// DUAL LOGIN - VERIFY OTP
+// =====================================================
+
+const verifyWhatsAppLoginOTP = async (req, res) => {
+  try {
+    const { phone, email, identifier, otp } = req.body;
+    const input = String(identifier || phone || email || "").trim();
+
+    if (!input || !otp) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide your phone number/email and the OTP",
+      });
+    }
+
+    const isEmail = input.includes("@");
+    let user = null;
+
+    if (isEmail) {
+      user = await User.findOne({ email: input.toLowerCase() });
+    } else {
+      const cleanedPhone = input.trim();
+      const stripped = cleanedPhone.replace(/^(\+?91)/, "");
+      user = await User.findOne({
+        $or: [
+          { phone: cleanedPhone },
+          { phone: stripped },
+          { phone: `+91${stripped}` },
+          { phone: `91${stripped}` },
+        ],
+      });
+    }
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    if (!user.loginOTP || user.loginOTP !== String(otp).trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid OTP. Please check the code sent to your WhatsApp or Email.",
+      });
+    }
+
+    if (!user.loginOTPExpire || user.loginOTPExpire < new Date()) {
+      return res.status(400).json({
+        success: false,
+        message: "OTP has expired. Please request a new one.",
+      });
+    }
+
+    // OTP is valid - clear it
+    user.loginOTP = null;
+    user.loginOTPExpire = null;
+    await user.save();
+
+    // Generate JWT token
+    const token = jwt.sign(
+      {
+        userId: user._id,
+        role: user.role,
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "7d",
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Login successful.",
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    console.error("VERIFY OTP ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to verify OTP. Please try again.",
+    });
+  }
+};
+
+// =====================================================
 // EXPORTS
 // =====================================================
 
@@ -456,4 +664,6 @@ module.exports = {
   forgotPassword,
   verifyResetOTP,
   resetPassword,
+  sendWhatsAppLoginOTP,
+  verifyWhatsAppLoginOTP,
 };

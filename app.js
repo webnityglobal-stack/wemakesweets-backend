@@ -6,6 +6,8 @@ const catalogRoutes = require("./routes/catalogRoutes");
 const collectionRoutes = require(
   "./routes/collectionRoutes"
 );
+const whatsappRoutes = require("./routes/whatsapp.routes");
+
 
 const app = express();
 
@@ -24,6 +26,9 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
+
+
+
 
 /*
 ====================================================
@@ -50,6 +55,11 @@ app.use(
 // ====================================================
 
 app.use(express.json());
+
+
+// whatsapp route 
+app.use("/api/whatsapp", whatsappRoutes);
+
 
 
 // ====================================================

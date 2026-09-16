@@ -3,6 +3,7 @@ const Product = require("../models/product");
 const Order = require("../models/order");
 const bcrypt = require("bcryptjs");
 const mongoose = require("mongoose");
+const whatsappService = require("../services/whatsappService");
 
 
 // ========================================
@@ -1179,6 +1180,12 @@ const updateAdminOrderStatus =
 
       await order.save();
 
+      // Trigger WhatsApp Status Notification
+      whatsappService
+        .sendOrderStatusNotification(order, newStatus)
+        .catch((waErr) =>
+          console.error("WhatsApp status notification error:", waErr.message)
+        );
 
       // =================================================
       // RESPONSE
