@@ -80,11 +80,6 @@ const getWeight = (product) => {
 // =====================================================
 // OPTION VALUES
 // =====================================================
-//
-// Tumhare current Variant schema me separate option_values
-// field nahi hai. Isliye jab tak model me option values
-// available nahi hain, blank object bhej rahe hain.
-// =====================================================
 
 const getOptionValues = (variant) => {
   if (
@@ -107,16 +102,9 @@ const getOptionValues = (variant) => {
 // =====================================================
 // PRODUCT OPTIONS
 // =====================================================
-//
-// Agar variants me option data available ho to usko derive
-// kiya ja sakta hai. Current schema me option name/value
-// structure nahi hai, isliye empty array safe hai.
-// =====================================================
 
 const getProductOptions = (product) => {
-  if (
-    Array.isArray(product?.options)
-  ) {
+  if (Array.isArray(product?.options)) {
     return product.options;
   }
 
@@ -124,7 +112,7 @@ const getProductOptions = (product) => {
 };
 
 // =====================================================
-// HELPER: FORMAT PRODUCT
+// FORMAT PRODUCT
 // =====================================================
 
 const formatProduct = (product, req) => {
@@ -178,91 +166,87 @@ const formatProduct = (product, req) => {
 
     tags: "",
 
-    // Shiprocket catalog status
     status: "active",
 
     // ==========================================
     // VARIANTS
     // ==========================================
 
-    variants: variants.map(
-      (variant) => {
-        const variantImage =
-          getImageUrl(
-            product.images?.[0],
-            req
-          );
+    variants: variants.map((variant) => {
+      const variantImage =
+        getImageUrl(
+          product.images?.[0],
+          req
+        );
 
-        return {
-          // ====================================
-          // UNIQUE VARIANT ID
-          // ====================================
+      return {
+        // ====================================
+        // UNIQUE VARIANT ID
+        // ====================================
 
-          id: Number(
-            variant.shiprocketId
-          ),
+        id: Number(
+          variant.shiprocketId
+        ),
 
-          title:
-            variant.title || "",
+        title:
+          variant.title || "",
 
-          price: String(
+        price:
+          String(
             variant.salePrice ?? 0
           ),
 
-          compare_at_price:
-            String(
-              variant.mrp ?? 0
-            ),
+        compare_at_price:
+          String(
+            variant.mrp ?? 0
+          ),
 
-          sku:
-            variant.sku || "",
+        sku:
+          variant.sku || "",
 
-          created_at:
-            productCreatedAt,
+        created_at:
+          productCreatedAt,
 
-          updated_at:
-            productUpdatedAt,
+        updated_at:
+          productUpdatedAt,
 
-          // Your current schema does not
-          // contain taxable, so default true.
-          taxable: true,
+        taxable: true,
 
-          quantity: Number(
+        quantity:
+          Number(
             variant.stock ?? 0
           ),
 
-          // Shiprocket expects grams.
-          grams: Number(
+        // Shiprocket expects grams
+        grams:
+          Number(
             productWeight || 0
           ),
 
-          image: {
-            src:
-              variantImage
-          },
+        image: {
+          src: variantImage
+        },
 
-          option_values:
-            getOptionValues(
-              variant
-            ),
+        option_values:
+          getOptionValues(
+            variant
+          ),
 
-          weight:
-            Number(
-              productWeight || 0
-            ),
+        weight:
+          Number(
+            productWeight || 0
+          ),
 
-          weight_unit: "g"
-        };
-      }
-    ),
+        weight_unit: "g"
+      };
+    }),
 
     // ==========================================
     // PRODUCT IMAGE
     // ==========================================
 
     image: {
-      src:
-        productImage
+      src: productImage
     },
 
     // ==========================================
@@ -319,10 +303,6 @@ const fetchProducts = async (
       skip
     } = getPagination(req);
 
-    // ==========================================
-    // FETCH PRODUCTS
-    // ==========================================
-
     const products =
       await Product.find({})
         .sort({
@@ -332,16 +312,8 @@ const fetchProducts = async (
         .limit(limit)
         .lean();
 
-    // ==========================================
-    // TOTAL
-    // ==========================================
-
     const total =
       await Product.countDocuments({});
-
-    // ==========================================
-    // FORMAT
-    // ==========================================
 
     const formattedProducts =
       products.map(
@@ -351,10 +323,6 @@ const fetchProducts = async (
             req
           )
       );
-
-    // ==========================================
-    // RESPONSE
-    // ==========================================
 
     return res.status(200).json({
       data: {
@@ -384,7 +352,7 @@ const fetchProducts = async (
 // 2. FETCH PRODUCTS BY COLLECTION
 //
 // GET /api/catalog/collection-products
-// ?collection_id=COLLECTION_ID&page=1&limit=100
+// ?collection_id=1000000001&page=1&limit=100
 // =====================================================
 
 const fetchProductsByCollection =
@@ -426,40 +394,46 @@ const fetchProductsByCollection =
 
       let collection = null;
 
-      // First try MongoDB _id
-      if (
-        mongoose.isValidObjectId(
+      const collectionIdString =
+        String(
           collection_id
+        ).trim();
+
+      // ==========================================
+      // FIRST: FIND BY SHIPROCKET ID
+      // ==========================================
+
+      const numericCollectionId =
+        Number(
+          collectionIdString
+        );
+
+      if (
+        Number.isSafeInteger(
+          numericCollectionId
+        )
+      ) {
+        collection =
+          await Collection.findOne({
+            shiprocketId:
+              numericCollectionId
+          }).lean();
+      }
+
+      // ==========================================
+      // FALLBACK: FIND BY MONGO _id
+      // ==========================================
+
+      if (
+        !collection &&
+        mongoose.isValidObjectId(
+          collectionIdString
         )
       ) {
         collection =
           await Collection.findById(
-            collection_id
+            collectionIdString
           ).lean();
-      }
-
-      // ==========================================
-      // OPTIONAL: SUPPORT SHIPROCKET ID
-      // ==========================================
-      //
-      // Agar future me Collection model me
-      // shiprocketId add karte ho to ye automatically
-      // support karega.
-      // ==========================================
-
-      if (!collection) {
-        try {
-          collection =
-            await Collection.findOne({
-              shiprocketId:
-                Number(
-                  collection_id
-                )
-            }).lean();
-        } catch (error) {
-          // Ignore if shiprocketId field
-          // doesn't exist in schema.
-        }
       }
 
       // ==========================================
@@ -484,6 +458,20 @@ const fetchProductsByCollection =
         )
           ? collection.products
           : [];
+
+      // Agar collection me koi product nahi hai
+      if (productIds.length === 0) {
+        return res.status(200).json({
+          data: {
+            total: 0,
+            products: []
+          }
+        });
+      }
+
+      // ==========================================
+      // PRODUCT FILTER
+      // ==========================================
 
       const filter = {
         _id: {
@@ -599,7 +587,6 @@ const fetchCollections =
       const formattedCollections =
         collections.map(
           (collection) => {
-
             const collectionImage =
               getImageUrl(
                 collection.image,
@@ -608,35 +595,58 @@ const fetchCollections =
 
             return {
               // ==================================
-              // UNIQUE COLLECTION ID
+              // SHIPROCKET COLLECTION ID
               // ==================================
 
-              id:
-                String(
-                  collection._id
-                ),
+              id: Number(
+                collection.shiprocketId
+              ),
+
+              // ==================================
+              // UPDATED DATE
+              // ==================================
 
               updated_at:
                 formatDate(
                   collection.updatedAt
                 ),
 
+              // ==================================
+              // DESCRIPTION
+              // ==================================
+
               body_html:
                 collection.description ||
                 "",
 
+              // ==================================
+              // SLUG
+              // ==================================
+
               handle:
                 collection.slug ||
                 "",
+
+              // ==================================
+              // IMAGE
+              // ==================================
 
               image: {
                 src:
                   collectionImage
               },
 
+              // ==================================
+              // COLLECTION NAME
+              // ==================================
+
               title:
                 collection.name ||
                 "",
+
+              // ==================================
+              // CREATED DATE
+              // ==================================
 
               created_at:
                 formatDate(
