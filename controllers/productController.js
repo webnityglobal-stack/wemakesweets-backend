@@ -134,7 +134,7 @@ const addProduct = async (req, res) => {
     }
 
     // =================================================
-    // GENERATE UNIQUE 10-DIGIT SHIPROCKET ID
+    // GENERATE UNIQUE SHIPROCKET ID
     // =================================================
 
     const shiprocketId = await generateShiprocketId();
@@ -197,7 +197,6 @@ const addProduct = async (req, res) => {
     // =================================================
 
     const productData = {
-      // Automatically generated
       shiprocketId,
 
       slug,
@@ -246,15 +245,6 @@ const addProduct = async (req, res) => {
     // =================================================
     // HIGHLIGHTS
     // =================================================
-    // If admin sends custom highlights,
-    // use those.
-    //
-    // If admin does NOT send highlights,
-    // don't add the field here.
-    //
-    // Mongoose will automatically use the
-    // default highlights from Product schema.
-    // =================================================
 
     if (
       highlights !== undefined &&
@@ -279,51 +269,106 @@ const addProduct = async (req, res) => {
     const product =
       await Product.create(productData);
 
+    console.log(
+      "Product created:",
+      product._id
+    );
+
     // =================================================
-    // AUTOMATICALLY ADD PRODUCT TO SWEETS COLLECTION
+    // AUTOMATICALLY ADD PRODUCT TO SWEETS
     // =================================================
 
-    const sweetsCollection = await Collection.findOne({
-      slug: "sweets",
-    });
+    const sweetsCollection =
+      await Collection.findOne({
+        slug: "sweets",
+      });
 
-    if (sweetsCollection) {
-      // Add product to collection
-      if (
-        !sweetsCollection.products.some(
-          (productId) =>
-            String(productId) === String(product._id)
-        )
-      ) {
-        sweetsCollection.products.push(product._id);
-        await sweetsCollection.save();
+    console.log(
+      "Sweets Collection:",
+      sweetsCollection
+        ? sweetsCollection._id
+        : "NOT FOUND"
+    );
+
+    if (!sweetsCollection) {
+      console.error(
+        "Sweets collection not found. Product created without collection."
+      );
+    } else {
+      // -----------------------------------------------
+      // ADD PRODUCT TO COLLECTION
+      // -----------------------------------------------
+
+      if (!Array.isArray(sweetsCollection.products)) {
+        sweetsCollection.products = [];
       }
 
-      // Add collection to product
-      if (
-        !product.collections.some(
+      const productExistsInCollection =
+        sweetsCollection.products.some(
+          (productId) =>
+            String(productId) ===
+            String(product._id)
+        );
+
+      if (!productExistsInCollection) {
+        sweetsCollection.products.push(
+          product._id
+        );
+
+        await sweetsCollection.save();
+
+        console.log(
+          "Product added to Sweets collection:",
+          product._id
+        );
+      }
+
+      // -----------------------------------------------
+      // ADD COLLECTION TO PRODUCT
+      // -----------------------------------------------
+
+      if (!Array.isArray(product.collections)) {
+        product.collections = [];
+      }
+
+      const collectionExistsInProduct =
+        product.collections.some(
           (collectionId) =>
             String(collectionId) ===
             String(sweetsCollection._id)
-        )
-      ) {
+        );
+
+      if (!collectionExistsInProduct) {
         product.collections.push(
           sweetsCollection._id
         );
 
         await product.save();
+
+        console.log(
+          "Sweets collection added to product:",
+          product._id
+        );
       }
     }
 
+    // =================================================
+    // RE-FETCH PRODUCT
+    // =================================================
+
+    const finalProduct =
+      await Product.findById(product._id);
+
     console.log(
-      "Product uploaded successfully:",
-      product
+      "Final Product Collections:",
+      finalProduct.collections
     );
 
     return res.status(201).json({
       success: true,
-      message: "Product added successfully",
-      product,
+      message:
+        "Product added successfully",
+      product: finalProduct,
     });
   } catch (error) {
     console.error(
@@ -514,10 +559,6 @@ const updateProduct = async (req, res) => {
     // =================================================
     // UPDATE HIGHLIGHTS
     // =================================================
-    // If highlights are sent, update them.
-    // If not sent, existing/default highlights
-    // remain unchanged.
-    // =================================================
 
     try {
       if (
@@ -626,16 +667,82 @@ const updateProduct = async (req, res) => {
     }
 
     // =================================================
+    // ENSURE PRODUCT IS IN SWEETS COLLECTION
+    // =================================================
+
+    const sweetsCollection =
+      await Collection.findOne({
+        slug: "sweets",
+      });
+
+    if (sweetsCollection) {
+      // -----------------------------------------------
+      // Product → Sweets
+      // -----------------------------------------------
+
+      if (!Array.isArray(product.collections)) {
+        product.collections = [];
+      }
+
+      const collectionExists =
+        product.collections.some(
+          (collectionId) =>
+            String(collectionId) ===
+            String(sweetsCollection._id)
+        );
+
+      if (!collectionExists) {
+        product.collections.push(
+          sweetsCollection._id
+        );
+      }
+
+      // -----------------------------------------------
+      // Sweets → Product
+      // -----------------------------------------------
+
+      if (!Array.isArray(sweetsCollection.products)) {
+        sweetsCollection.products = [];
+      }
+
+      const productExists =
+        sweetsCollection.products.some(
+          (productId) =>
+            String(productId) ===
+            String(product._id)
+        );
+
+      if (!productExists) {
+        sweetsCollection.products.push(
+          product._id
+        );
+
+        await sweetsCollection.save();
+      }
+    } else {
+      console.error(
+        "Sweets collection not found during product update."
+      );
+    }
+
+    // =================================================
     // SAVE PRODUCT
     // =================================================
 
     await product.save();
 
+    // =================================================
+    // RE-FETCH UPDATED PRODUCT
+    // =================================================
+
+    const updatedProduct =
+      await Product.findById(product._id);
+
     return res.status(200).json({
       success: true,
       message:
         "Product updated successfully",
-      product,
+      product: updatedProduct,
     });
   } catch (error) {
     console.error(
@@ -678,7 +785,8 @@ const updateProduct = async (req, res) => {
     if (error.name === "ValidationError") {
       return res.status(400).json({
         success: false,
-        message: error.message,
+        message:
+          error.message,
       });
     }
 
@@ -712,6 +820,21 @@ const deleteProduct = async (req, res) => {
     }
 
     // =================================================
+    // REMOVE PRODUCT FROM ALL COLLECTIONS
+    // =================================================
+
+    await Collection.updateMany(
+      {
+        products: product._id,
+      },
+      {
+        $pull: {
+          products: product._id,
+        },
+      }
+    );
+
+    // =================================================
     // DELETE ALL PRODUCT IMAGES
     // =================================================
 
@@ -731,16 +854,14 @@ const deleteProduct = async (req, res) => {
           if (
             fs.existsSync(imagePath)
           ) {
-            fs.unlinkSync(
-              imagePath
-            );
+            fs.unlinkSync(imagePath);
           }
         }
       );
     }
 
     // =================================================
-    // DELETE PRODUCT FROM MONGODB
+    // DELETE PRODUCT
     // =================================================
 
     await Product.findByIdAndDelete(id);
@@ -808,9 +929,7 @@ const deleteProductImage = async (
     // =================================================
 
     if (
-      !product.images.includes(
-        image
-      )
+      !product.images.includes(image)
     ) {
       return res.status(404).json({
         success: false,
