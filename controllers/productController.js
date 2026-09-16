@@ -1,4 +1,5 @@
 const Product = require("../models/product");
+const Collection = require("../models/Collection");
 const generateShiprocketId = require("../utils/generateShiprocketId");
 const fs = require("fs");
 const path = require("path");
@@ -277,6 +278,42 @@ const addProduct = async (req, res) => {
 
     const product =
       await Product.create(productData);
+
+    // =================================================
+    // AUTOMATICALLY ADD PRODUCT TO SWEETS COLLECTION
+    // =================================================
+
+    const sweetsCollection = await Collection.findOne({
+      slug: "sweets",
+    });
+
+    if (sweetsCollection) {
+      // Add product to collection
+      if (
+        !sweetsCollection.products.some(
+          (productId) =>
+            String(productId) === String(product._id)
+        )
+      ) {
+        sweetsCollection.products.push(product._id);
+        await sweetsCollection.save();
+      }
+
+      // Add collection to product
+      if (
+        !product.collections.some(
+          (collectionId) =>
+            String(collectionId) ===
+            String(sweetsCollection._id)
+        )
+      ) {
+        product.collections.push(
+          sweetsCollection._id
+        );
+
+        await product.save();
+      }
+    }
 
     console.log(
       "Product uploaded successfully:",
