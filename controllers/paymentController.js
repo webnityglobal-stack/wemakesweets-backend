@@ -1,10 +1,18 @@
-const crypto = require("crypto");
-
 const Order = require("../models/order");
 const Payment = require("../models/payment");
 
-const { createCheckout } = require("../services/fastrrService");
-const { verifyHmac } = require("../utils/fastrrHmac");
+const {
+  createCheckout,
+} = require("../services/fastrrService");
+
+const {
+  verifyHmac,
+} = require("../utils/fastrrHmac");
+
+const {
+  createShiprocketOrder,
+} = require("../services/shiprocketService");
+
 const whatsappService = require("../services/whatsappService");
 
 // =====================================================
@@ -12,11 +20,16 @@ const whatsappService = require("../services/whatsappService");
 // =====================================================
 
 const getUserId = (req) => {
-  return req.userId || req.user?.id || req.user?._id;
+  return (
+    req.userId ||
+    req.user?.userId ||
+    req.user?.id ||
+    req.user?._id
+  );
 };
 
 // =====================================================
-// HELPER: EXTRACT VALUE FROM OBJECT
+// HELPER: FIRST AVAILABLE VALUE
 // =====================================================
 
 const getFirstValue = (...values) => {
@@ -34,18 +47,166 @@ const getFirstValue = (...values) => {
 };
 
 // =====================================================
-// CREATE ONLINE PAYMENT / FASTRR CHECKOUT
+// HELPER: IS COD
 // =====================================================
 
-const createPayment = async (req, res) => {
+const isCODPayment = (paymentType) => {
+  const value = String(
+    paymentType || ""
+  ).toUpperCase();
+
+  return (
+    value === "COD" ||
+    value === "CASH_ON_DELIVERY" ||
+    value === "CASH ON DELIVERY"
+  );
+};
+
+// =====================================================
+// HELPER: SHIPROCKET ORDER PAYLOAD
+// =====================================================
+
+const buildShiprocketOrderPayload = (
+  order,
+  paymentMethod
+) => {
+  const address = order.shippingAddress;
+
+  const shiprocketItems = order.items.map(
+    (item) => ({
+      name: item.name,
+
+      sku:
+        item.sku ||
+        item.product?.toString(),
+
+      units: Number(item.quantity),
+
+      selling_price: Number(item.price),
+    })
+  );
+
+  const isCOD = paymentMethod === "COD";
+
+  return {
+    order_id: order.orderId,
+
+    order_date: order.createdAt.toISOString(),
+
+    pickup_location:
+      process.env.SHIPROCKET_PICKUP_LOCATION,
+
+    comment: "We Make Sweets Order",
+
+    billing_customer_name: address.name,
+
+    billing_last_name: "",
+
+    billing_address: address.address,
+
+    billing_address_2:
+      address.address2 || "",
+
+    billing_city: address.city,
+
+    billing_pincode: address.pincode,
+
+    billing_state: address.state,
+
+    billing_country:
+      address.country || "India",
+
+    billing_email:
+      address.email || "",
+
+    billing_phone: address.phone,
+
+    shipping_is_billing: true,
+
+    shipping_customer_name:
+      address.name,
+
+    shipping_last_name: "",
+
+    shipping_address:
+      address.address,
+
+    shipping_address_2:
+      address.address2 || "",
+
+    shipping_city: address.city,
+
+    shipping_pincode:
+      address.pincode,
+
+    shipping_state:
+      address.state,
+
+    shipping_country:
+      address.country || "India",
+
+    shipping_email:
+      address.email || "",
+
+    shipping_phone:
+      address.phone,
+
+    order_items: shiprocketItems,
+
+    payment_method:
+      isCOD ? "COD" : "Prepaid",
+
+    shipping_charges: 0,
+
+    giftwrap_charges: 0,
+
+    transaction_charges: 0,
+
+    total_discount: 0,
+
+    sub_total:
+      Number(order.totalAmount),
+
+    length:
+      Number(
+        process.env.SHIPROCKET_PACKAGE_LENGTH
+      ) || 20,
+
+    breadth:
+      Number(
+        process.env.SHIPROCKET_PACKAGE_BREADTH
+      ) || 15,
+
+    height:
+      Number(
+        process.env.SHIPROCKET_PACKAGE_HEIGHT
+      ) || 10,
+
+    weight:
+      Number(
+        process.env.SHIPROCKET_PACKAGE_WEIGHT
+      ) || 0.5,
+  };
+};
+
+// =====================================================
+// 1. CREATE ONLINE PAYMENT / FASTRR CHECKOUT
+//
+// POST /api/payment/create
+// =====================================================
+
+const createPayment = async (
+  req,
+  res
+) => {
   try {
     const userId = getUserId(req);
 
     const { orderId } = req.body;
 
-    // -------------------------------------------------
-    // VALIDATION
-    // -------------------------------------------------
+    // ==========================================
+    // AUTH
+    // ==========================================
 
     if (!userId) {
       return res.status(401).json({
@@ -54,6 +215,10 @@ const createPayment = async (req, res) => {
       });
     }
 
+    // ==========================================
+    // VALIDATE ORDER ID
+    // ==========================================
+
     if (!orderId) {
       return res.status(400).json({
         success: false,
@@ -61,14 +226,15 @@ const createPayment = async (req, res) => {
       });
     }
 
-    // -------------------------------------------------
+    // ==========================================
     // FIND ORDER
-    // -------------------------------------------------
+    // ==========================================
 
-    const order = await Order.findOne({
-      orderId,
-      user: userId,
-    }).populate("items.product");
+    const order =
+      await Order.findOne({
+        orderId,
+        user: userId,
+      }).populate("items.product");
 
     if (!order) {
       return res.status(404).json({
@@ -77,14 +243,39 @@ const createPayment = async (req, res) => {
       });
     }
 
-    // -------------------------------------------------
-    // CHECK ORDER AMOUNT
-    // -------------------------------------------------
+    // ==========================================
+    // ONLY ONLINE PAYMENT
+    // ==========================================
+
+    if (order.paymentMethod !== "ONLINE") {
+      return res.status(400).json({
+        success: false,
+        message:
+          "FastRR checkout is only available for ONLINE orders",
+      });
+    }
+
+    // ==========================================
+    // PREVENT ALREADY PAID
+    // ==========================================
+
+    if (order.paymentStatus === "PAID") {
+      return res.status(400).json({
+        success: false,
+        message: "Order is already paid",
+      });
+    }
+
+    // ==========================================
+    // VALIDATE AMOUNT
+    // ==========================================
+
+    const amount =
+      Number(order.totalAmount);
 
     if (
-      order.totalAmount === undefined ||
-      order.totalAmount === null ||
-      Number(order.totalAmount) <= 0
+      !Number.isFinite(amount) ||
+      amount <= 0
     ) {
       return res.status(400).json({
         success: false,
@@ -92,67 +283,108 @@ const createPayment = async (req, res) => {
       });
     }
 
-    const amount = Number(order.totalAmount);
+    // ==========================================
+    // FIND PAYMENT
+    // ==========================================
 
-    // -------------------------------------------------
-    // FIND EXISTING PAYMENT
-    // -------------------------------------------------
+    let payment =
+      await Payment.findOne({
+        order: order._id,
+        user: userId,
+      });
 
-    let payment = await Payment.findOne({
-      order: order._id,
-      user: userId,
-    });
-
-    // -------------------------------------------------
+    // ==========================================
     // CREATE PAYMENT DOCUMENT
-    // -------------------------------------------------
+    // ==========================================
 
     if (!payment) {
-      payment = new Payment({
-        order: order._id,
-        orderId: order.orderId,
-        user: userId,
+      payment =
+        await Payment.create({
+          order: order._id,
 
-        amount,
-        currency: "INR",
+          orderId: order.orderId,
 
-        paymentMethod: "ONLINE",
-        gateway: "FASTRR",
+          user: userId,
 
-        status: "PROCESSING",
-      });
+          amount,
+
+          currency: "INR",
+
+          paymentMethod: "ONLINE",
+
+          gateway: "FASTRR",
+
+          status: "PROCESSING",
+        });
     } else {
       payment.amount = amount;
+
       payment.paymentMethod = "ONLINE";
+
       payment.gateway = "FASTRR";
+
       payment.status = "PROCESSING";
+
       payment.failureReason = null;
+
+      await payment.save();
     }
 
-    await payment.save();
+    // ==========================================
+    // BUILD FASTRR ITEMS
+    // ==========================================
 
-    // -------------------------------------------------
-    // FASTRR ITEMS
-    // -------------------------------------------------
+    const items = [];
 
-    const items = order.items.map((item) => {
+    for (
+      const item of order.items
+    ) {
+      if (!item.variantId) {
+        throw new Error(
+          `Variant ID missing for order item: ${item.name}`
+        );
+      }
 
-  if (!item.variantId) {
-    throw new Error(
-      `Variant ID missing for order item: ${item.name}`
-    );
-  }
+      const product =
+        item.product;
 
-  return {
-    variant_id: String(item.variantId),
-    quantity: Number(item.quantity),
-  };
+      if (!product) {
+        throw new Error(
+          `Product missing for order item: ${item.name}`
+        );
+      }
 
-});
+      const variant =
+        product.variants?.id(
+          item.variantId
+        );
 
-    // -------------------------------------------------
-    // FASTRR CHECKOUT PAYLOAD
-    // -------------------------------------------------
+      if (!variant) {
+        throw new Error(
+          `Variant not found for order item: ${item.name}`
+        );
+      }
+
+      if (!variant.shiprocketId) {
+        throw new Error(
+          `Shiprocket variant ID missing for: ${item.name}`
+        );
+      }
+
+      items.push({
+        variant_id:
+          String(
+            variant.shiprocketId
+          ),
+
+        quantity:
+          Number(item.quantity),
+      });
+    }
+
+    // ==========================================
+    // FASTRR PAYLOAD
+    // ==========================================
 
     const payload = {
       cart_data: {
@@ -161,8 +393,12 @@ const createPayment = async (req, res) => {
 
       redirect_url:
         `${process.env.FRONTEND_URL}/payment/success` +
-        `?orderId=${encodeURIComponent(order.orderId)}`,
-      timestamp: new Date().toISOString(),
+        `?orderId=${encodeURIComponent(
+          order.orderId
+        )}`,
+
+      timestamp:
+        new Date().toISOString(),
     };
 
     console.log(
@@ -170,7 +406,7 @@ const createPayment = async (req, res) => {
     );
 
     console.log(
-      "CREATING FASTRR PAYMENT"
+      "CREATING FASTRR CHECKOUT"
     );
 
     console.log(
@@ -179,25 +415,45 @@ const createPayment = async (req, res) => {
     );
 
     console.log(
+      "Payment ID:",
+      payment._id
+    );
+
+    console.log(
       "Amount:",
       amount
     );
 
     console.log(
-      "Payload:",
-      JSON.stringify(payload, null, 2)
+      "FastRR Items:",
+      JSON.stringify(
+        items,
+        null,
+        2
+      )
+    );
+
+    console.log(
+      "FastRR Payload:",
+      JSON.stringify(
+        payload,
+        null,
+        2
+      )
     );
 
     console.log(
       "========================================"
     );
 
-    // -------------------------------------------------
+    // ==========================================
     // CALL FASTRR
-    // -------------------------------------------------
+    // ==========================================
 
     const fastrrResponse =
-      await createCheckout(payload);
+      await createCheckout(
+        payload
+      );
 
     console.log(
       "FASTRR RESPONSE:",
@@ -208,65 +464,111 @@ const createPayment = async (req, res) => {
       )
     );
 
-    // -------------------------------------------------
-    // EXTRACT FASTRR DATA
-    // -------------------------------------------------
+    // ==========================================
+    // EXTRACT FASTRR RESPONSE
+    //
+    // ACTUAL FASTRR RESPONSE:
+    //
+    // {
+    //   result: {
+    //     token: "...",
+    //     expires_at: "...",
+    //     data: {
+    //       order_id: "..."
+    //     }
+    //   }
+    // }
+    // ==========================================
 
-    const responseData =
-      fastrrResponse?.data ||
-      fastrrResponse;
+    const checkoutToken =
+      getFirstValue(
+        fastrrResponse?.result?.token,
 
-    const checkoutToken = getFirstValue(
-      responseData?.token,
-      responseData?.access_token,
-      responseData?.checkout_token,
+        fastrrResponse?.token,
 
-      responseData?.data?.token,
-      responseData?.data?.access_token,
-      responseData?.data?.checkout_token
+        fastrrResponse?.data?.token
+      );
+
+    const gatewayOrderId =
+      getFirstValue(
+        fastrrResponse?.result?.data?.order_id,
+
+        fastrrResponse?.result?.order_id,
+
+        fastrrResponse?.order_id,
+
+        fastrrResponse?.data?.order_id,
+
+        fastrrResponse?.gateway_order_id,
+
+        fastrrResponse?.data?.gateway_order_id
+      );
+
+    console.log(
+      "FastRR Checkout Token:",
+      checkoutToken
+        ? "RECEIVED"
+        : "MISSING"
     );
 
-    const gatewayOrderId = getFirstValue(
-      responseData?.order_id,
-      responseData?.gateway_order_id,
-
-      responseData?.data?.order_id,
-      responseData?.data?.gateway_order_id
+    console.log(
+      "FastRR Gateway Order ID:",
+      gatewayOrderId
     );
 
-    const paymentId = getFirstValue(
-      responseData?.payment_id,
+    // ==========================================
+    // TOKEN VALIDATION
+    // ==========================================
 
-      responseData?.data?.payment_id
-    );
+    if (!checkoutToken) {
+      console.error(
+        "FastRR token missing:",
+        JSON.stringify(
+          fastrrResponse,
+          null,
+          2
+        )
+      );
 
-    const transactionId = getFirstValue(
-      responseData?.transaction_id,
+      return res.status(502).json({
+        success: false,
 
-      responseData?.data?.transaction_id
-    );
+        message:
+          "FastRR checkout token was not received",
 
-    // -------------------------------------------------
-    // SAVE FASTRR RESPONSE
-    // -------------------------------------------------
+        fastrrResponse,
+      });
+    }
+
+    // ==========================================
+    // SAVE FASTRR DETAILS
+    // ==========================================
 
     payment.gatewayOrderId =
-      gatewayOrderId;
-
-    payment.paymentId =
-      paymentId;
-
-    payment.transactionId =
-      transactionId;
+      gatewayOrderId
+        ? String(gatewayOrderId)
+        : null;
 
     payment.gatewayResponse =
       fastrrResponse;
 
+    payment.status =
+      "PROCESSING";
+
     await payment.save();
 
-    // -------------------------------------------------
+    // ==========================================
+    // UPDATE ORDER PAYMENT STATUS
+    // ==========================================
+
+    order.paymentStatus =
+      "PROCESSING";
+
+    await order.save();
+
+    // ==========================================
     // RESPONSE
-    // -------------------------------------------------
+    // ==========================================
 
     return res.status(200).json({
       success: true,
@@ -274,28 +576,31 @@ const createPayment = async (req, res) => {
       message:
         "FASTRR checkout created successfully",
 
-      paymentId: payment._id,
+      paymentId:
+        payment._id,
 
-      orderId: order.orderId,
+      orderId:
+        order.orderId,
 
-      amount: payment.amount,
+      amount:
+        payment.amount,
 
-      currency: payment.currency,
+      currency:
+        payment.currency,
 
-      status: payment.status,
+      status:
+        payment.status,
 
       checkoutToken,
 
       gatewayOrderId:
         payment.gatewayOrderId,
 
-      transactionId:
-        payment.transactionId,
-
       fastrrResponse,
     });
 
   } catch (error) {
+
     console.error(
       "CREATE PAYMENT ERROR:",
       error.response?.data ||
@@ -308,7 +613,7 @@ const createPayment = async (req, res) => {
       success: false,
 
       message:
-        "Unable to create payment",
+        "Unable to create FastRR payment",
 
       error:
         error.response?.data ||
@@ -318,18 +623,25 @@ const createPayment = async (req, res) => {
 };
 
 // =====================================================
-// PAYMENT SUCCESS
+// 2. PAYMENT SUCCESS
+//
+// IMPORTANT:
+// This endpoint DOES NOT mark payment as PAID.
+// FastRR webhook is responsible for final confirmation.
 // =====================================================
 
-const paymentSuccess = async (req, res) => {
+const paymentSuccess = async (
+  req,
+  res
+) => {
   try {
-    const userId = getUserId(req);
+    const userId =
+      getUserId(req);
 
     const {
       paymentId,
-      transactionId,
-      gatewayOrderId,
       orderId,
+      gatewayOrderId,
     } = req.body;
 
     if (!userId) {
@@ -339,31 +651,45 @@ const paymentSuccess = async (req, res) => {
       });
     }
 
-    // -------------------------------------------------
-    // FIND PAYMENT
-    // -------------------------------------------------
-
     let payment = null;
 
+    // FIND BY PAYMENT ID
+
     if (paymentId) {
-      payment = await Payment.findOne({
-        _id: paymentId,
-        user: userId,
-      });
+      payment =
+        await Payment.findOne({
+          _id: paymentId,
+          user: userId,
+        });
     }
 
-    if (!payment && gatewayOrderId) {
-      payment = await Payment.findOne({
-        gatewayOrderId,
-        user: userId,
-      });
+    // FIND BY GATEWAY ORDER ID
+
+    if (
+      !payment &&
+      gatewayOrderId
+    ) {
+      payment =
+        await Payment.findOne({
+          gatewayOrderId:
+            String(
+              gatewayOrderId
+            ),
+          user: userId,
+        });
     }
 
-    if (!payment && orderId) {
-      payment = await Payment.findOne({
-        orderId,
-        user: userId,
-      });
+    // FIND BY ORDER ID
+
+    if (
+      !payment &&
+      orderId
+    ) {
+      payment =
+        await Payment.findOne({
+          orderId,
+          user: userId,
+        });
     }
 
     if (!payment) {
@@ -373,67 +699,40 @@ const paymentSuccess = async (req, res) => {
       });
     }
 
-    // -------------------------------------------------
-    // UPDATE PAYMENT
-    // -------------------------------------------------
-
-    payment.status = "PAID";
-
-    if (transactionId) {
-      payment.transactionId =
-        transactionId;
-    }
-
-    if (gatewayOrderId) {
-      payment.gatewayOrderId =
-        gatewayOrderId;
-    }
-
-    payment.failureReason = null;
-    payment.paidAt = new Date();
-
-    await payment.save();
-
-    // -------------------------------------------------
-    // UPDATE ORDER
-    // -------------------------------------------------
-
-    await Order.findByIdAndUpdate(
-      payment.order,
-      {
-        paymentStatus: "PAID",
-        orderStatus: "CONFIRMED",
-      }
-    );
-
-    // Trigger WhatsApp Status Notification
-    whatsappService
-      .sendOrderStatusNotification(payment.order, "CONFIRMED")
-      .catch((waErr) =>
-        console.error("WhatsApp payment confirmation notification error:", waErr.message)
-      );
-
     return res.status(200).json({
       success: true,
 
       message:
-        "Payment marked as successful",
+        "Payment status retrieved successfully",
 
       payment: {
         id: payment._id,
-        orderId: payment.orderId,
-        amount: payment.amount,
-        status: payment.status,
-        paymentId: payment.paymentId,
+
+        orderId:
+          payment.orderId,
+
+        amount:
+          payment.amount,
+
+        status:
+          payment.status,
+
+        paymentId:
+          payment.paymentId,
+
         transactionId:
           payment.transactionId,
+
         gatewayOrderId:
           payment.gatewayOrderId,
-        paidAt: payment.paidAt,
+
+        paidAt:
+          payment.paidAt,
       },
     });
 
   } catch (error) {
+
     console.error(
       "PAYMENT SUCCESS ERROR:",
       error
@@ -441,20 +740,27 @@ const paymentSuccess = async (req, res) => {
 
     return res.status(500).json({
       success: false,
+
       message:
-        "Unable to update payment success",
-      error: error.message,
+        "Unable to get payment status",
+
+      error:
+        error.message,
     });
   }
 };
 
 // =====================================================
-// PAYMENT FAILED
+// 3. PAYMENT FAILED
 // =====================================================
 
-const paymentFailed = async (req, res) => {
+const paymentFailed = async (
+  req,
+  res
+) => {
   try {
-    const userId = getUserId(req);
+    const userId =
+      getUserId(req);
 
     const {
       paymentId,
@@ -471,31 +777,39 @@ const paymentFailed = async (req, res) => {
       });
     }
 
-    // -------------------------------------------------
-    // FIND PAYMENT
-    // -------------------------------------------------
-
     let payment = null;
 
     if (paymentId) {
-      payment = await Payment.findOne({
-        _id: paymentId,
-        user: userId,
-      });
+      payment =
+        await Payment.findOne({
+          _id: paymentId,
+          user: userId,
+        });
     }
 
-    if (!payment && gatewayOrderId) {
-      payment = await Payment.findOne({
-        gatewayOrderId,
-        user: userId,
-      });
+    if (
+      !payment &&
+      gatewayOrderId
+    ) {
+      payment =
+        await Payment.findOne({
+          gatewayOrderId:
+            String(
+              gatewayOrderId
+            ),
+          user: userId,
+        });
     }
 
-    if (!payment && orderId) {
-      payment = await Payment.findOne({
-        orderId,
-        user: userId,
-      });
+    if (
+      !payment &&
+      orderId
+    ) {
+      payment =
+        await Payment.findOne({
+          orderId,
+          user: userId,
+        });
     }
 
     if (!payment) {
@@ -505,11 +819,8 @@ const paymentFailed = async (req, res) => {
       });
     }
 
-    // -------------------------------------------------
-    // UPDATE PAYMENT
-    // -------------------------------------------------
-
-    payment.status = "FAILED";
+    payment.status =
+      "FAILED";
 
     payment.failureReason =
       failureReason ||
@@ -517,10 +828,6 @@ const paymentFailed = async (req, res) => {
       "Payment failed";
 
     await payment.save();
-
-    // -------------------------------------------------
-    // UPDATE ORDER
-    // -------------------------------------------------
 
     await Order.findByIdAndUpdate(
       payment.order,
@@ -537,14 +844,20 @@ const paymentFailed = async (req, res) => {
 
       payment: {
         id: payment._id,
-        orderId: payment.orderId,
-        status: payment.status,
+
+        orderId:
+          payment.orderId,
+
+        status:
+          payment.status,
+
         failureReason:
           payment.failureReason,
       },
     });
 
   } catch (error) {
+
     console.error(
       "PAYMENT FAILED ERROR:",
       error
@@ -556,115 +869,153 @@ const paymentFailed = async (req, res) => {
       message:
         "Unable to update payment failure",
 
-      error: error.message,
+      error:
+        error.message,
     });
   }
 };
 
 // =====================================================
-// FASTRR WEBHOOK
+// 4. FASTRR / SHIPROCKET CHECKOUT WEBHOOK
+//
+// POST /api/payment/fastrr/webhook
 // =====================================================
 
-const fastrrWebhook = async (req, res) => {
+const fastrrWebhook = async (
+  req,
+  res
+) => {
   try {
+
     console.log(
       "========================================"
     );
 
     console.log(
-      "FASTRR WEBHOOK RECEIVED"
+      "FASTRR CHECKOUT WEBHOOK RECEIVED"
     );
 
-    // -------------------------------------------------
-    // API KEY CHECK
-    // -------------------------------------------------
-
-    const receivedApiKey =
-      req.headers["x-api-key"];
-
-    if (
-      receivedApiKey !==
-      process.env.FASTRR_API_KEY
-    ) {
-      console.error(
-        "Invalid FASTRR API Key"
-      );
-
-      return res.status(401).json({
-        success: false,
-        message: "Invalid API key",
-      });
-    }
-
-    // -------------------------------------------------
+    // ==========================================
     // RAW BODY
-    // -------------------------------------------------
+    // ==========================================
 
     let rawBody;
 
     if (Buffer.isBuffer(req.body)) {
       rawBody =
         req.body.toString("utf8");
-    } else if (typeof req.body === "string") {
+
+    } else if (
+      typeof req.body === "string"
+    ) {
       rawBody = req.body;
+
     } else {
       rawBody =
         JSON.stringify(req.body);
     }
 
-    // -------------------------------------------------
-    // HMAC
-    // -------------------------------------------------
+    // ==========================================
+    // OPTIONAL HMAC VALIDATION
+    // ==========================================
+
+    const receivedApiKey =
+      req.headers["x-api-key"];
 
     const receivedHmac =
       req.headers[
         "x-api-hmac-sha256"
       ];
 
-    if (!receivedHmac) {
-      console.error(
-        "Missing FASTRR HMAC"
-      );
+    const requireWebhookHmac =
+      String(
+        process.env
+          .REQUIRE_FASTRR_WEBHOOK_HMAC
+      ).toLowerCase() ===
+      "true";
 
-      return res.status(401).json({
-        success: false,
-        message: "Missing HMAC",
-      });
+    if (
+      requireWebhookHmac
+    ) {
+
+      if (
+        !receivedApiKey ||
+        receivedApiKey !==
+          process.env.FASTRR_API_KEY
+      ) {
+        return res.status(401).json({
+          success: false,
+          message:
+            "Invalid API key",
+        });
+      }
+
+      if (!receivedHmac) {
+        return res.status(401).json({
+          success: false,
+          message:
+            "Missing HMAC",
+        });
+      }
+
+      const validHmac =
+        verifyHmac(
+          rawBody,
+          receivedHmac
+        );
+
+      if (!validHmac) {
+        return res.status(401).json({
+          success: false,
+          message:
+            "Invalid HMAC",
+        });
+      }
+
+    } else if (receivedHmac) {
+
+      const validHmac =
+        verifyHmac(
+          rawBody,
+          receivedHmac
+        );
+
+      if (!validHmac) {
+        return res.status(401).json({
+          success: false,
+          message:
+            "Invalid HMAC",
+        });
+      }
+
+      if (
+        receivedApiKey &&
+        receivedApiKey !==
+          process.env.FASTRR_API_KEY
+      ) {
+        return res.status(401).json({
+          success: false,
+          message:
+            "Invalid API key",
+        });
+      }
     }
 
-    const validHmac =
-      verifyHmac(
-        rawBody,
-        receivedHmac
-      );
-
-    if (!validHmac) {
-      console.error(
-        "Invalid FASTRR HMAC"
-      );
-
-      return res.status(401).json({
-        success: false,
-        message: "Invalid HMAC",
-      });
-    }
-
-    // -------------------------------------------------
-    // PARSE BODY
-    // -------------------------------------------------
+    // ==========================================
+    // PARSE WEBHOOK
+    // ==========================================
 
     let webhookData;
 
     try {
       webhookData =
         JSON.parse(rawBody);
-    } catch (parseError) {
-      console.error(
-        "Invalid webhook JSON"
-      );
+
+    } catch (error) {
 
       return res.status(400).json({
         success: false,
+
         message:
           "Invalid webhook JSON",
       });
@@ -679,180 +1030,389 @@ const fastrrWebhook = async (req, res) => {
       )
     );
 
-    // -------------------------------------------------
-    // EXTRACT STATUS
-    // -------------------------------------------------
+    // ==========================================
+    // EXTRACT DATA
+    // ==========================================
 
-    const data =
-      webhookData?.data ||
-      webhookData;
-
-    const statusRaw =
+    const webhookOrderId =
       getFirstValue(
-        data?.status,
-        data?.payment_status,
-        data?.paymentStatus,
+        webhookData?.order_id,
 
-        webhookData?.status,
-        webhookData?.payment_status
+        webhookData?.orderId
       );
 
     const status =
       String(
-        statusRaw || ""
+        getFirstValue(
+          webhookData?.status
+        ) || ""
       ).toUpperCase();
 
-    // -------------------------------------------------
-    // EXTRACT IDS
-    // -------------------------------------------------
-
-    const gatewayOrderId =
+    const paymentType =
       getFirstValue(
-        data?.order_id,
-        data?.gateway_order_id,
+        webhookData?.payment_type,
 
-        webhookData?.order_id,
-        webhookData?.gateway_order_id
+        webhookData?.paymentType
       );
 
-    const paymentId =
-      getFirstValue(
-        data?.payment_id,
-        webhookData?.payment_id
+    const totalAmount =
+      Number(
+        getFirstValue(
+          webhookData?.total_amount_payable,
+
+          webhookData?.totalAmountPayable
+        )
       );
 
-    const transactionId =
+    const phone =
       getFirstValue(
-        data?.transaction_id,
-        webhookData?.transaction_id
+        webhookData?.phone
       );
 
-    const orderId =
+    const email =
       getFirstValue(
-        data?.custom_attributes?.order_id,
-        data?.orderId,
-
-        webhookData?.custom_attributes?.order_id,
-        webhookData?.orderId
+        webhookData?.email
       );
 
-    // -------------------------------------------------
-    // FIND PAYMENT
-    // -------------------------------------------------
+    const cartItems =
+      Array.isArray(
+        webhookData?.cart_data?.items
+      )
+        ? webhookData.cart_data.items
+        : [];
 
-    let payment = null;
+    // ==========================================
+    // VALIDATE ORDER ID
+    // ==========================================
 
-    if (gatewayOrderId) {
-      payment =
-        await Payment.findOne({
-          gatewayOrderId:
-            String(gatewayOrderId),
-        });
+    if (!webhookOrderId) {
+      return res.status(400).json({
+        success: false,
+
+        message:
+          "order_id is missing from webhook",
+      });
     }
 
-    if (!payment && paymentId) {
-      payment =
-        await Payment.findOne({
-          paymentId:
-            String(paymentId),
-        });
-    }
+    // ==========================================
+    // FIND PAYMENT BY FASTRR ORDER ID
+    // ==========================================
 
-    if (!payment && orderId) {
+    let payment =
+      await Payment.findOne({
+        gatewayOrderId:
+          String(webhookOrderId),
+      });
+
+    // ==========================================
+    // FALLBACK OUR ORDER ID
+    // ==========================================
+
+    if (!payment) {
       payment =
         await Payment.findOne({
           orderId:
-            String(orderId),
+            String(webhookOrderId),
         });
     }
 
     if (!payment) {
+
       console.error(
-        "Payment not found for webhook"
+        "Payment not found for FastRR webhook:",
+        webhookOrderId
       );
 
       return res.status(404).json({
         success: false,
+
         message:
-          "Payment not found",
+          "Payment not found for webhook order",
       });
     }
 
-    // -------------------------------------------------
-    // SAVE GATEWAY DATA
-    // -------------------------------------------------
+    // ==========================================
+    // FIND OUR ORDER
+    // ==========================================
 
-    if (gatewayOrderId) {
-      payment.gatewayOrderId =
-        String(gatewayOrderId);
+    const order =
+      await Order.findById(
+        payment.order
+      ).populate(
+        "items.product"
+      );
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+
+        message:
+          "Order not found for payment",
+      });
     }
 
-    if (paymentId) {
-      payment.paymentId =
-        String(paymentId);
-    }
+    // ==========================================
+    // IDEMPOTENCY
+    // ==========================================
 
-    if (transactionId) {
-      payment.transactionId =
-        String(transactionId);
-    }
+    const alreadyPaid =
+      payment.status === "PAID";
 
-    payment.gatewayResponse =
-      webhookData;
+    const shiprocketAlreadyCreated =
+      !!order.shiprocket?.orderId;
 
-    // -------------------------------------------------
-    // SUCCESS
-    // -------------------------------------------------
+    // ==========================================
+    // LOG WEBHOOK ITEMS
+    // ==========================================
 
-    const successStatuses = [
-      "SUCCESS",
-      "SUCCESSFUL",
-      "PAID",
-      "COMPLETED",
-    ];
+    console.log(
+      "FastRR Webhook Items:",
+      JSON.stringify(
+        cartItems,
+        null,
+        2
+      )
+    );
+
+    // ==========================================
+    // VALIDATE AMOUNT
+    // ==========================================
 
     if (
-      successStatuses.includes(status)
+      Number.isFinite(totalAmount) &&
+      Math.abs(
+        totalAmount -
+        Number(order.totalAmount)
+      ) > 0.01
     ) {
-      payment.status = "PAID";
 
-      payment.failureReason = null;
+      console.error(
+        "FAST RR AMOUNT MISMATCH"
+      );
 
-      payment.paidAt =
-        payment.paidAt ||
-        new Date();
+      return res.status(400).json({
+        success: false,
+
+        message:
+          "Payment amount does not match order amount",
+      });
+    }
+
+    // ==========================================
+    // PAYMENT TYPE
+    // ==========================================
+
+    const cod =
+      isCODPayment(paymentType);
+
+    // ==========================================
+    // SUCCESS WEBHOOK
+    // ==========================================
+
+    if (status === "SUCCESS") {
+
+      // ========================================
+      // UPDATE PAYMENT
+      // ========================================
+
+      if (!alreadyPaid) {
+
+        payment.status =
+          cod
+            ? "PENDING"
+            : "PAID";
+
+        payment.failureReason =
+          null;
+
+        if (!cod) {
+          payment.paidAt =
+            payment.paidAt ||
+            new Date();
+        }
+      }
+
+      payment.gatewayResponse =
+        webhookData;
 
       await payment.save();
 
-      await Order.findByIdAndUpdate(
-        payment.order,
-        {
-          paymentStatus: "PAID",
-          orderStatus: "CONFIRMED",
-        }
-      );
+      // ========================================
+      // UPDATE ORDER
+      // ========================================
 
-      // Trigger WhatsApp Status Notification
+      order.paymentMethod =
+        cod
+          ? "COD"
+          : "ONLINE";
+
+      order.paymentStatus =
+        cod
+          ? "PENDING"
+          : "PAID";
+
+      order.orderStatus =
+        "CONFIRMED";
+
+      await order.save();
+
+      // ========================================
+      // CREATE SHIPROCKET ORDER
+      // ========================================
+
+      if (!shiprocketAlreadyCreated) {
+
+        try {
+
+          const shiprocketPaymentMethod =
+            cod
+              ? "COD"
+              : "Prepaid";
+
+          const shiprocketOrderData =
+            buildShiprocketOrderPayload(
+              order,
+              cod
+                ? "COD"
+                : "ONLINE"
+            );
+
+          console.log(
+            "CREATING SHIPROCKET ORDER FROM FASTRR"
+          );
+
+          console.log(
+            "Our Order ID:",
+            order.orderId
+          );
+
+          console.log(
+            "Payment Type:",
+            paymentType
+          );
+
+          console.log(
+            "Shiprocket Payment Method:",
+            shiprocketPaymentMethod
+          );
+
+          const shiprocketResponse =
+            await createShiprocketOrder(
+              shiprocketOrderData
+            );
+
+          console.log(
+            "Shiprocket Response:",
+            JSON.stringify(
+              shiprocketResponse,
+              null,
+              2
+            )
+          );
+
+          order.shiprocket.orderId =
+            shiprocketResponse?.order_id ||
+            null;
+
+          order.shiprocket.shipmentId =
+            shiprocketResponse?.shipment_id ||
+            null;
+
+          order.shiprocket.status =
+            "ORDER_CREATED";
+
+          await order.save();
+
+        } catch (
+          shiprocketError
+        ) {
+
+          console.error(
+            "Shiprocket order creation failed:",
+            shiprocketError.response?.data ||
+            shiprocketError.message
+          );
+
+          // Payment is already successful.
+          // Shiprocket is a separate fulfilment step.
+
+          return res.status(500).json({
+            success: false,
+
+            message:
+              "Payment successful but Shiprocket order creation failed",
+
+            orderId:
+              order.orderId,
+
+            paymentId:
+              payment._id,
+
+            error:
+              shiprocketError.response?.data ||
+              shiprocketError.message,
+          });
+        }
+
+      } else {
+
+        console.log(
+          "Shiprocket order already exists. Skipping duplicate creation."
+        );
+      }
+
+      // ========================================
+      // WHATSAPP
+      // ========================================
+
       whatsappService
-        .sendOrderStatusNotification(payment.order, "CONFIRMED")
-        .catch((waErr) =>
-          console.error("WhatsApp webhook payment confirmation error:", waErr.message)
+        .sendOrderStatusNotification(
+          order,
+          "CONFIRMED"
+        )
+        .catch(
+          (waErr) =>
+            console.error(
+              "WhatsApp payment confirmation error:",
+              waErr.message
+            )
         );
 
-      console.log(
-        "Payment successfully marked PAID"
-      );
+      // ========================================
+      // RESPONSE
+      // ========================================
 
       return res.status(200).json({
         success: true,
+
         message:
-          "Webhook processed successfully",
+          "FastRR order webhook processed successfully",
+
+        orderId:
+          order.orderId,
+
+        paymentStatus:
+          order.paymentStatus,
+
+        orderStatus:
+          order.orderStatus,
+
+        shiprocket: {
+          orderId:
+            order.shiprocket?.orderId,
+
+          shipmentId:
+            order.shiprocket?.shipmentId,
+
+          status:
+            order.shiprocket?.status,
+        },
       });
     }
 
-    // -------------------------------------------------
-    // FAILED
-    // -------------------------------------------------
+    // ==========================================
+    // FAILED WEBHOOK
+    // ==========================================
 
     const failedStatuses = [
       "FAILED",
@@ -864,61 +1424,87 @@ const fastrrWebhook = async (req, res) => {
     if (
       failedStatuses.includes(status)
     ) {
-      payment.status = "FAILED";
+
+      payment.status =
+        "FAILED";
 
       payment.failureReason =
         getFirstValue(
-          data?.message,
-          data?.error,
-          data?.failure_reason,
           webhookData?.message,
-          "Payment failed"
+
+          webhookData?.error,
+
+          webhookData?.failure_reason,
+
+          "FastRR checkout/payment failed"
         );
+
+      payment.gatewayResponse =
+        webhookData;
 
       await payment.save();
 
-      await Order.findByIdAndUpdate(
-        payment.order,
-        {
-          paymentStatus: "FAILED",
-        }
-      );
+      order.paymentStatus =
+        "FAILED";
 
-      console.log(
-        "Payment marked FAILED"
-      );
+      await order.save();
 
       return res.status(200).json({
         success: true,
+
         message:
-          "Webhook processed successfully",
+          "FastRR failure webhook processed",
+
+        orderId:
+          order.orderId,
+
+        paymentStatus:
+          order.paymentStatus,
       });
     }
 
-    // -------------------------------------------------
-    // PROCESSING / PENDING
-    // -------------------------------------------------
+    // ==========================================
+    // OTHER STATUS
+    // ==========================================
 
-    payment.status =
-      status === "PROCESSING"
-        ? "PROCESSING"
-        : "PENDING";
+    payment.gatewayResponse =
+      webhookData;
+
+    if (status === "PROCESSING") {
+
+      payment.status =
+        "PROCESSING";
+
+      order.paymentStatus =
+        "PROCESSING";
+
+    } else {
+
+      payment.status =
+        "PENDING";
+    }
 
     await payment.save();
 
-    console.log(
-      "Payment status:",
-      payment.status
-    );
+    await order.save();
 
     return res.status(200).json({
       success: true,
+
       message:
-        "Webhook received successfully",
-      status: payment.status,
+        "FastRR webhook received",
+
+      status,
+
+      orderId:
+        order.orderId,
+
+      paymentStatus:
+        payment.status,
     });
 
   } catch (error) {
+
     console.error(
       "FASTRR WEBHOOK ERROR:",
       error
@@ -928,22 +1514,32 @@ const fastrrWebhook = async (req, res) => {
       success: false,
 
       message:
-        "Unable to process FASTRR webhook",
+        "Unable to process FastRR webhook",
 
-      error: error.message,
+      error:
+        error.message,
     });
   }
 };
 
 // =====================================================
-// GET PAYMENT
+// 5. GET PAYMENT
+//
+// GET /api/payment/:paymentId
 // =====================================================
 
-const getPayment = async (req, res) => {
+const getPayment = async (
+  req,
+  res
+) => {
   try {
-    const userId = getUserId(req);
 
-    const { paymentId } = req.params;
+    const userId =
+      getUserId(req);
+
+    const {
+      paymentId,
+    } = req.params;
 
     if (!userId) {
       return res.status(401).json({
@@ -951,10 +1547,6 @@ const getPayment = async (req, res) => {
         message: "Unauthorized",
       });
     }
-
-    // -------------------------------------------------
-    // FIND PAYMENT
-    // -------------------------------------------------
 
     const payment =
       await Payment.findOne({
@@ -978,7 +1570,8 @@ const getPayment = async (req, res) => {
       success: true,
 
       payment: {
-        id: payment._id,
+        id:
+          payment._id,
 
         orderId:
           payment.orderId,
@@ -1022,6 +1615,7 @@ const getPayment = async (req, res) => {
     });
 
   } catch (error) {
+
     console.error(
       "GET PAYMENT ERROR:",
       error
@@ -1033,7 +1627,8 @@ const getPayment = async (req, res) => {
       message:
         "Unable to get payment",
 
-      error: error.message,
+      error:
+        error.message,
     });
   }
 };
