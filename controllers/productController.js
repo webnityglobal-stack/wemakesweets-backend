@@ -305,10 +305,14 @@ const addProduct = async (
     // PRODUCT IMAGES
     // =================================================
 
+    const backendUrl =
+      process.env.BACKEND_URL ||
+      `${req.protocol}://${req.get("host")}`;
+
     const images =
       req.files?.map(
         (file) =>
-          `/uploads/products/images/${file.filename}`
+          `${backendUrl}/uploads/products/images/${file.filename}`
       ) || [];
 
     // =================================================
@@ -415,7 +419,7 @@ const addProduct = async (
 
       rating:
         rating !== undefined &&
-        rating !== ""
+          rating !== ""
           ? Number(rating)
           : 0,
 
@@ -810,7 +814,7 @@ const updateProduct = async (
     ) {
       product.isBestSeller =
         isBestSeller ===
-          "true" ||
+        "true" ||
         isBestSeller === true;
     }
 
@@ -853,7 +857,7 @@ const updateProduct = async (
     try {
       if (
         highlights !==
-          undefined &&
+        undefined &&
         highlights !== ""
       ) {
         product.highlights =
@@ -982,12 +986,14 @@ const updateProduct = async (
       req.files &&
       req.files.length > 0
     ) {
+      const backendUrl =
+        process.env.BACKEND_URL ||
+        `${req.protocol}://${req.get("host")}`;
+
       const newImages =
         req.files.map(
           (file) =>
-            `${req.protocol}://${req.get(
-              "host"
-            )}/uploads/products/images/${file.filename}`
+            `${backendUrl}/uploads/products/images/${file.filename}`
         );
 
       product.images = [
