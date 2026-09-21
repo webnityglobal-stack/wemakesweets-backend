@@ -20,7 +20,8 @@ app.use(
     origin: [
       "https://wemakesweets.vercel.app",
       "http://localhost:5173",
-      "https://we-make-sweets-admin.vercel.app"
+      "https://we-make-sweets-admin.vercel.app",
+      "https://darkslategray-horse-285328.hostingersite.com/",
     ],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
