@@ -3,6 +3,7 @@ const Payment = require("../models/payment");
 
 const {
   createCheckout,
+  fetchFastRROrderDetails,
 } = require("../services/fastrrService");
 
 const {
@@ -80,14 +81,14 @@ const normalizePhone = (phone) => {
     ""
   );
 
-  // Handles:
-  // 9876543210
-  // +919876543210
-  // 919876543210
-  // 91 9876543210
-  const normalized = digits.slice(-10);
+  const normalized =
+    digits.slice(-10);
 
-  if (!/^\d{10}$/.test(normalized)) {
+  if (
+    !/^\d{10}$/.test(
+      normalized
+    )
+  ) {
     throw new Error(
       `Invalid customer phone number: ${phone}`
     );
@@ -107,20 +108,15 @@ const buildShiprocketOrderPayload = (
   const address =
     order.shippingAddress || {};
 
-  // ==========================================
-  // NORMALIZE PHONE
-  // ==========================================
-
   const phone =
-    normalizePhone(address.phone);
-
-  // ==========================================
-  // ORDER ITEMS
-  // ==========================================
+    normalizePhone(
+      address.phone
+    );
 
   const shiprocketItems =
     order.items.map((item) => ({
-      name: item.name,
+      name:
+        item.name,
 
       sku:
         item.sku ||
@@ -133,17 +129,9 @@ const buildShiprocketOrderPayload = (
         Number(item.price),
     }));
 
-  // ==========================================
-  // PAYMENT METHOD
-  // ==========================================
-
   const isCOD =
     String(paymentMethod)
       .toUpperCase() === "COD";
-
-  // ==========================================
-  // PAYLOAD
-  // ==========================================
 
   return {
     order_id:
@@ -155,7 +143,8 @@ const buildShiprocketOrderPayload = (
         : new Date().toISOString(),
 
     pickup_location:
-      process.env.SHIPROCKET_PICKUP_LOCATION,
+      process.env
+        .SHIPROCKET_PICKUP_LOCATION,
 
     comment:
       "We Make Sweets Order",
@@ -260,10 +249,12 @@ const buildShiprocketOrderPayload = (
       0,
 
     sub_total:
-      Number(order.totalAmount),
+      Number(
+        order.totalAmount
+      ),
 
     // ========================================
-    // PACKAGE DIMENSIONS
+    // PACKAGE
     // ========================================
 
     length:
@@ -815,10 +806,6 @@ const paymentSuccess = async (
 
     let payment = null;
 
-    // ==========================================
-    // FIND BY PAYMENT ID
-    // ==========================================
-
     if (paymentId) {
       payment =
         await Payment.findOne({
@@ -829,10 +816,6 @@ const paymentSuccess = async (
             userId,
         });
     }
-
-    // ==========================================
-    // FIND BY GATEWAY ORDER ID
-    // ==========================================
 
     if (
       !payment &&
@@ -849,10 +832,6 @@ const paymentSuccess = async (
             userId,
         });
     }
-
-    // ==========================================
-    // FIND BY OUR ORDER ID
-    // ==========================================
 
     if (
       !payment &&
@@ -959,10 +938,6 @@ const paymentFailed = async (
 
     let payment = null;
 
-    // ==========================================
-    // FIND PAYMENT
-    // ==========================================
-
     if (paymentId) {
       payment =
         await Payment.findOne({
@@ -1011,10 +986,6 @@ const paymentFailed = async (
       });
     }
 
-    // ==========================================
-    // UPDATE PAYMENT
-    // ==========================================
-
     payment.status =
       "FAILED";
 
@@ -1024,10 +995,6 @@ const paymentFailed = async (
       "Payment failed";
 
     await payment.save();
-
-    // ==========================================
-    // UPDATE ORDER
-    // ==========================================
 
     await Order.findByIdAndUpdate(
       payment.order,
@@ -1525,6 +1492,60 @@ const fastrrWebhook = async (
       );
 
       // ========================================
+      // FETCH FASTRR CHECKOUT ORDER DETAILS
+      // ========================================
+      //
+      // IMPORTANT:
+      // We are fetching the actual details entered
+      // on FastRR Checkout.
+      //
+      // For now we only log the response.
+      // We will map the address after confirming
+      // the actual response structure.
+      // ========================================
+
+      let checkoutOrderDetails =
+        null;
+
+      try {
+
+        checkoutOrderDetails =
+          await fetchFastRROrderDetails(
+            webhookOrderId
+          );
+
+        console.log(
+          "========== FASTRR CHECKOUT ORDER DETAILS =========="
+        );
+
+        console.log(
+          JSON.stringify(
+            checkoutOrderDetails,
+            null,
+            2
+          )
+        );
+
+        console.log(
+          "===================================================="
+        );
+
+      } catch (
+        checkoutDetailsError
+      ) {
+
+        console.error(
+          "Unable to fetch FastRR checkout order details:",
+          checkoutDetailsError.response?.data ||
+          checkoutDetailsError.message
+        );
+
+        // Do NOT stop the payment flow here.
+        // Payment and Shiprocket processing can continue
+        // using the existing order address for now.
+      }
+
+      // ========================================
       // UPDATE PAYMENT
       // ========================================
 
@@ -1692,10 +1713,6 @@ const fastrrWebhook = async (
               ?.data ||
             shiprocketError.message
           );
-
-          // ======================================
-          // PAYMENT IS ALREADY SUCCESSFUL
-          // ======================================
 
           return res.status(500).json({
             success: false,

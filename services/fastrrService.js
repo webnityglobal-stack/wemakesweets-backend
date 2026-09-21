@@ -6,6 +6,10 @@ const FASTRR_BASE_URL =
   process.env.FASTRR_BASE_URL ||
   "https://checkout-api.shiprocket.com";
 
+// =====================================================
+// 1. CREATE FASTRR CHECKOUT
+// =====================================================
+
 const createCheckout = async (payload) => {
   try {
     // ==========================================
@@ -39,21 +43,27 @@ const createCheckout = async (payload) => {
     console.log({
       baseUrl: FASTRR_BASE_URL,
 
-      keyExists: !!process.env.FASTRR_API_KEY,
+      keyExists:
+        !!process.env.FASTRR_API_KEY,
 
-      keyLength: process.env.FASTRR_API_KEY?.length,
+      keyLength:
+        process.env.FASTRR_API_KEY?.length,
 
-      secretExists: !!process.env.FASTRR_API_SECRET,
+      secretExists:
+        !!process.env.FASTRR_API_SECRET,
 
-      secretLength: process.env.FASTRR_API_SECRET?.length,
+      secretLength:
+        process.env.FASTRR_API_SECRET?.length,
 
-      hmacLength: hmac?.length,
+      hmacLength:
+        hmac?.length,
 
-      bodyLength: rawBody.length,
+      bodyLength:
+        rawBody.length,
 
-      contentType: headers["Content-Type"],
+      contentType:
+        headers["Content-Type"],
 
-      // Only prefix is logged for safety
       apiKeyPrefix:
         headers["X-Api-Key"]?.substring(0, 7),
     });
@@ -67,31 +77,38 @@ const createCheckout = async (payload) => {
     const url =
       `${FASTRR_BASE_URL}/api/v1/access-token/checkout`;
 
-    console.log("========== FASTRR CHECKOUT ==========");
+    console.log(
+      "========== FASTRR CHECKOUT =========="
+    );
 
     console.log("URL:", url);
 
     console.log(
       "Payload:",
-      JSON.stringify(payload, null, 2)
+      JSON.stringify(
+        payload,
+        null,
+        2
+      )
     );
 
     // ==========================================
     // 6. FASTRR API Request
     // ==========================================
 
-    const response = await axios.post(
-      url,
-      rawBody,
-      {
-        headers,
-        timeout: 30000,
+    const response =
+      await axios.post(
+        url,
+        rawBody,
+        {
+          headers,
 
-        // Don't let Axios automatically throw
-        // so we can see FASTRR's actual response
-        validateStatus: () => true,
-      }
-    );
+          timeout: 30000,
+
+          validateStatus:
+            () => true,
+        }
+      );
 
     // ==========================================
     // 7. Log RAW Response
@@ -132,16 +149,23 @@ const createCheckout = async (payload) => {
     // 8. Handle FASTRR Error Response
     // ==========================================
 
-    if (response.status >= 400) {
-
-      const error = new Error(
-        `FASTRR API returned HTTP ${response.status}`
-      );
+    if (
+      response.status >= 400
+    ) {
+      const error =
+        new Error(
+          `FASTRR API returned HTTP ${response.status}`
+        );
 
       error.response = {
-        status: response.status,
-        data: response.data,
-        headers: response.headers,
+        status:
+          response.status,
+
+        data:
+          response.data,
+
+        headers:
+          response.headers,
       };
 
       throw error;
@@ -155,23 +179,21 @@ const createCheckout = async (payload) => {
 
   } catch (error) {
 
-    // ==========================================
-    // 10. Detailed Error Logging
-    // ==========================================
-
     console.log(
       "========== FASTRR ERROR =========="
     );
 
     console.log(
       "HTTP STATUS:",
-      error.response?.status || "N/A"
+      error.response?.status ||
+      "N/A"
     );
 
     console.log(
       "RESPONSE DATA:",
       JSON.stringify(
-        error.response?.data || null,
+        error.response?.data ||
+        null,
         null,
         2
       )
@@ -190,6 +212,206 @@ const createCheckout = async (payload) => {
   }
 };
 
+
+// =====================================================
+// 2. FETCH FASTRR CHECKOUT ORDER DETAILS
+// =====================================================
+//
+// This API is used after FastRR checkout/payment
+// to fetch the actual checkout order details.
+//
+// IMPORTANT:
+// For now we only fetch and return the response.
+// We will map the checkout address after checking
+// the actual response structure.
+// =====================================================
+
+const fetchFastRROrderDetails = async (
+  orderId
+) => {
+
+  try {
+
+    if (!orderId) {
+      throw new Error(
+        "FastRR order ID is required"
+      );
+    }
+
+    // ==========================================
+    // PAYLOAD
+    // ==========================================
+
+    const payload = {
+      order_id:
+        String(orderId),
+
+      timestamp:
+        new Date().toISOString(),
+    };
+
+    // ==========================================
+    // EXACT JSON BODY
+    // ==========================================
+
+    const rawBody =
+      JSON.stringify(payload);
+
+    // ==========================================
+    // HMAC
+    // ==========================================
+
+    const hmac =
+      generateHmac(rawBody);
+
+    // ==========================================
+    // HEADERS
+    // ==========================================
+
+    const headers = {
+      "Content-Type":
+        "application/json",
+
+      "X-Api-Key":
+        process.env.FASTRR_API_KEY,
+
+      "X-Api-HMAC-SHA256":
+        hmac,
+    };
+
+    // ==========================================
+    // URL
+    // ==========================================
+
+    const url =
+      "https://fastrr-api-dev.pickrr.com/api/v1/custom-platform-order/details";
+
+    console.log(
+      "========================================"
+    );
+
+    console.log(
+      "FETCHING FASTRR ORDER DETAILS"
+    );
+
+    console.log(
+      "FastRR Order ID:",
+      orderId
+    );
+
+    console.log(
+      "URL:",
+      url
+    );
+
+    console.log(
+      "Payload:",
+      JSON.stringify(
+        payload,
+        null,
+        2
+      )
+    );
+
+    console.log(
+      "========================================"
+    );
+
+    // ==========================================
+    // API REQUEST
+    // ==========================================
+
+    const response =
+      await axios.post(
+        url,
+        rawBody,
+        {
+          headers,
+
+          timeout: 30000,
+
+          validateStatus:
+            () => true,
+        }
+      );
+
+    // ==========================================
+    // RESPONSE LOG
+    // ==========================================
+
+    console.log(
+      "========== FASTRR ORDER DETAILS RESPONSE =========="
+    );
+
+    console.log(
+      "HTTP STATUS:",
+      response.status
+    );
+
+    console.log(
+      "RESPONSE DATA:",
+      JSON.stringify(
+        response.data,
+        null,
+        2
+      )
+    );
+
+    console.log(
+      "===================================================="
+    );
+
+    // ==========================================
+    // ERROR
+    // ==========================================
+
+    if (
+      response.status >= 400
+    ) {
+
+      const error =
+        new Error(
+          `FastRR Order Details API returned HTTP ${response.status}`
+        );
+
+      error.response = {
+        status:
+          response.status,
+
+        data:
+          response.data,
+
+        headers:
+          response.headers,
+      };
+
+      throw error;
+    }
+
+    // ==========================================
+    // RETURN
+    // ==========================================
+
+    return response.data;
+
+  } catch (error) {
+
+    console.error(
+      "FAST RR ORDER DETAILS ERROR:",
+      error.response?.data ||
+      error.message
+    );
+
+    throw error;
+  }
+};
+
+
+// =====================================================
+// EXPORTS
+// =====================================================
+
 module.exports = {
   createCheckout,
+  fetchFastRROrderDetails,
 };
