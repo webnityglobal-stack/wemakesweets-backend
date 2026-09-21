@@ -1,6 +1,7 @@
 const Review = require("../models/review");
 const Product = require("../models/product");
 const Order = require("../models/order");
+const mongoose = require("mongoose");
 
 // ==================================================
 // ADD REVIEW
@@ -64,7 +65,7 @@ const addReview = async (req, res) => {
     // ------------------------------------------
 
     const purchasedOrder = await Order.findOne({
-      user: req.user._id,
+      user: req.user.userId,
 
       paymentStatus: "PAID",
 
@@ -91,7 +92,7 @@ const addReview = async (req, res) => {
 
     const existingReview = await Review.findOne({
       product: productId,
-      user: req.user._id,
+      user: req.user.userId,
     });
 
     if (existingReview) {
@@ -109,7 +110,7 @@ const addReview = async (req, res) => {
     const review = await Review.create({
       product: productId,
 
-      user: req.user._id,
+      user: req.user.userId,
 
       name: req.user.name || "Customer",
 
@@ -291,7 +292,7 @@ const updateReview = async (req, res) => {
       await Review.findOne({
         _id: req.params.id,
 
-        user: req.user._id,
+        user: req.user.userId,
       });
 
     if (!review) {
@@ -404,7 +405,7 @@ const deleteReview = async (req, res) => {
       await Review.findOne({
         _id: req.params.id,
 
-        user: req.user._id,
+        user: req.user.userId,
       });
 
     if (!review) {
@@ -467,83 +468,58 @@ const deleteReview = async (req, res) => {
 // UPDATE PRODUCT RATING
 // ==================================================
 
-const updateProductRating = async (
-  productId
-) => {
+const updateProductRating = async (productId) => {
   try {
-    const ratingData =
-      await Review.aggregate([
-        // --------------------------------------
-        // GET REVIEWS OF PRODUCT
-        // --------------------------------------
+    const ratingData = await Review.aggregate([
+      {
+        $match: {
+          product: new mongoose.Types.ObjectId(productId),
+          isApproved: true,
+        },
+      },
+      {
+        $group: {
+          _id: "$product",
 
-        {
-          $match: {
-            product: productId,
+          averageRating: {
+            $avg: "$rating",
+          },
 
-            isApproved: true,
+          totalReviews: {
+            $sum: 1,
           },
         },
-
-        // --------------------------------------
-        // CALCULATE AVERAGE
-        // --------------------------------------
-
-        {
-          $group: {
-            _id: "$product",
-
-            averageRating: {
-              $avg: "$rating",
-            },
-
-            totalReviews: {
-              $sum: 1,
-            },
-          },
-        },
-      ]);
-
-    // ------------------------------------------
-    // FIND PRODUCT
-    // ------------------------------------------
-
-    const product =
-      await Product.findById(productId);
-
-    if (!product) {
-      return;
-    }
-
-    // ------------------------------------------
-    // NO REVIEWS
-    // ------------------------------------------
+      },
+    ]);
 
     if (ratingData.length === 0) {
-      product.rating = 0;
+      await Product.updateOne(
+        { _id: productId },
+        {
+          $set: {
+            rating: 0,
+            numReviews: 0,
+          },
+        }
+      );
+    } else {
+      const averageRating = Number(
+        ratingData[0].averageRating.toFixed(1)
+      );
 
-      product.numReviews = 0;
+      const totalReviews =
+        ratingData[0].totalReviews;
+
+      await Product.updateOne(
+        { _id: productId },
+        {
+          $set: {
+            rating: averageRating,
+            numReviews: totalReviews,
+          },
+        }
+      );
     }
-
-    // ------------------------------------------
-    // REVIEWS EXIST
-    // ------------------------------------------
-
-    else {
-      product.rating =
-        Number(
-          ratingData[0]
-            .averageRating
-            .toFixed(1)
-        );
-
-      product.numReviews =
-        ratingData[0]
-          .totalReviews;
-    }
-
-    await product.save();
-
   } catch (error) {
     console.error(
       "Update Product Rating Error:",
