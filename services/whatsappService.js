@@ -4,7 +4,10 @@ const axios = require("axios");
 const getWhatsappConfig = () => {
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-  const version = process.env.WHATSAPP_API_VERSION || "v21.0";
+  let version = process.env.WHATSAPP_API_VERSION || "v21.0";
+  if (!version.startsWith("v") || parseInt(version.slice(1)) > 23) {
+    version = "v21.0";
+  }
 
   return {
     token,
