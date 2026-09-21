@@ -5,45 +5,139 @@ const fs = require("fs");
 const path = require("path");
 
 // =====================================================
+// SAFE NUMBER HELPERS
+// =====================================================
+
+const parseNumber = (value, fallback = null) => {
+  if (
+    value === undefined ||
+    value === null ||
+    value === ""
+  ) {
+    return fallback;
+  }
+
+  const number = parseFloat(
+    String(value).replace(/[^\d.-]/g, "")
+  );
+
+  return Number.isFinite(number)
+    ? number
+    : fallback;
+};
+
+// =====================================================
 // NORMALIZE VARIANTS
 // =====================================================
 
-const normalizeVariants = (variants) => {
+const normalizeVariants = (
+  variants,
+  productWeight = null
+) => {
   if (!Array.isArray(variants)) {
     return [];
   }
 
-  return variants.map((variant) => ({
-    ...variant,
+  return variants.map((variant, index) => {
+    // ===============================================
+    // VARIANT WEIGHT
+    // ===============================================
 
-    shiprocketId:
-      Number(variant.shiprocketId),
+    const weight = parseNumber(
+      variant.weight,
+      parseNumber(productWeight)
+    );
 
-    title:
-      variant.title || "",
+    // ===============================================
+    // SALE PRICE
+    // ===============================================
 
-    weight:
-      Number(variant.weight),
+    const salePrice = parseNumber(
+      variant.salePrice
+    );
 
-    salePrice:
-      Number(variant.salePrice),
+    // ===============================================
+    // MRP
+    // ===============================================
 
-    mrp:
-      Number(variant.mrp),
+    const mrp = parseNumber(
+      variant.mrp
+    );
 
-    stock:
-      Number(variant.stock ?? 0),
+    // ===============================================
+    // STOCK
+    // ===============================================
 
-    sku:
-      variant.sku || "",
-  }));
+    const stock = parseNumber(
+      variant.stock,
+      0
+    );
+
+    // ===============================================
+    // SHIPROCKET ID
+    // ===============================================
+
+    const shiprocketId =
+      parseNumber(
+        variant.shiprocketId
+      );
+
+    // ===============================================
+    // VALIDATION
+    // ===============================================
+
+    if (weight === null) {
+      throw new Error(
+        `Variant ${index + 1} weight is required`
+      );
+    }
+
+    if (salePrice === null) {
+      throw new Error(
+        `Variant ${index + 1} sale price is required`
+      );
+    }
+
+    if (mrp === null) {
+      throw new Error(
+        `Variant ${index + 1} MRP is required`
+      );
+    }
+
+    // ===============================================
+    // RETURN NORMALIZED VARIANT
+    // ===============================================
+
+    return {
+      ...variant,
+
+      shiprocketId,
+
+      title:
+        variant.title || "",
+
+      weight,
+
+      salePrice,
+
+      mrp,
+
+      stock,
+
+      sku:
+        variant.sku || "",
+    };
+  });
 };
 
 // =====================================================
 // GET PRODUCT BY ID
 // =====================================================
 
-const getProductById = async (req, res) => {
+const getProductById = async (
+  req,
+  res
+) => {
   try {
     const { id } = req.params;
 
@@ -70,7 +164,10 @@ const getProductById = async (req, res) => {
       error
     );
 
-    if (error.name === "CastError") {
+    if (
+      error.name ===
+      "CastError"
+    ) {
       return res.status(400).json({
         success: false,
         message:
@@ -224,24 +321,40 @@ const addProduct = async (
     let parsedCoupons = [];
 
     try {
-      if (ingredients !== undefined) {
+      if (
+        ingredients !== undefined
+      ) {
         parsedIngredients =
-          JSON.parse(ingredients);
+          JSON.parse(
+            ingredients
+          );
       }
 
-      if (nutrition !== undefined) {
+      if (
+        nutrition !== undefined
+      ) {
         parsedNutrition =
-          JSON.parse(nutrition);
+          JSON.parse(
+            nutrition
+          );
       }
 
-      if (variants !== undefined) {
+      if (
+        variants !== undefined
+      ) {
         parsedVariants =
-          JSON.parse(variants);
+          JSON.parse(
+            variants
+          );
       }
 
-      if (coupons !== undefined) {
+      if (
+        coupons !== undefined
+      ) {
         parsedCoupons =
-          JSON.parse(coupons);
+          JSON.parse(
+            coupons
+          );
       }
     } catch (parseError) {
       console.error(
@@ -259,11 +372,25 @@ const addProduct = async (
     // =================================================
     // NORMALIZE VARIANTS
     // =================================================
+    // Product weight is used as fallback
+    // if variant.weight is empty/missing.
+    // =================================================
 
-    const normalizedVariants =
-      normalizeVariants(
-        parsedVariants
-      );
+    let normalizedVariants;
+
+    try {
+      normalizedVariants =
+        normalizeVariants(
+          parsedVariants,
+          weight
+        );
+    } catch (variantError) {
+      return res.status(400).json({
+        success: false,
+        message:
+          variantError.message,
+      });
+    }
 
     // =================================================
     // CREATE PRODUCT DATA
@@ -485,7 +612,9 @@ const addProduct = async (
     // DUPLICATE KEY ERROR
     // =================================================
 
-    if (error.code === 11000) {
+    if (
+      error.code === 11000
+    ) {
       if (
         error.keyPattern
           ?.shiprocketId
@@ -614,12 +743,16 @@ const updateProduct = async (
     // UPDATE BASIC FIELDS
     // =================================================
 
-    if (slug !== undefined) {
+    if (
+      slug !== undefined
+    ) {
       product.slug =
         slug;
     }
 
-    if (name !== undefined) {
+    if (
+      name !== undefined
+    ) {
       product.name =
         name;
     }
@@ -648,7 +781,9 @@ const updateProduct = async (
         Number(salePrice);
     }
 
-    if (mrp !== undefined) {
+    if (
+      mrp !== undefined
+    ) {
       product.mrp =
         Number(mrp);
     }
@@ -792,15 +927,27 @@ const updateProduct = async (
             variants
           );
 
+        // ---------------------------------------------
+        // Use new product weight if supplied,
+        // otherwise use existing product weight.
+        // ---------------------------------------------
+
+        const variantWeightFallback =
+          weight !== undefined
+            ? weight
+            : product.weight;
+
         product.variants =
           normalizeVariants(
-            parsedVariants
+            parsedVariants,
+            variantWeightFallback
           );
       }
     } catch (error) {
       return res.status(400).json({
         success: false,
         message:
+          error.message ||
           "Invalid variants JSON format",
       });
     }
@@ -953,7 +1100,9 @@ const updateProduct = async (
     // DUPLICATE KEY ERROR
     // =================================================
 
-    if (error.code === 11000) {
+    if (
+      error.code === 11000
+    ) {
       if (
         error.keyPattern
           ?.shiprocketId
@@ -1017,10 +1166,6 @@ const deleteProduct = async (
     const { id } =
       req.params;
 
-    // =================================================
-    // FIND PRODUCT
-    // =================================================
-
     const product =
       await Product.findById(id);
 
@@ -1059,11 +1204,17 @@ const deleteProduct = async (
     ) {
       product.images.forEach(
         (image) => {
+          const cleanImage =
+            image.replace(
+              /^https?:\/\/[^/]+/,
+              ""
+            );
+
           const imagePath =
             path.join(
               __dirname,
               "..",
-              image
+              cleanImage
             );
 
           if (
@@ -1180,11 +1331,17 @@ const deleteProductImage = async (
     // REMOVE IMAGE FROM UPLOADS FOLDER
     // =================================================
 
+    const cleanImage =
+      image.replace(
+        /^https?:\/\/[^/]+/,
+        ""
+      );
+
     const imagePath =
       path.join(
         __dirname,
         "..",
-        image
+        cleanImage
       );
 
     if (
