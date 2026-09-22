@@ -1,5 +1,6 @@
 const Product = require("../models/product");
 const Collection = require("../models/Collection");
+const Review = require("../models/review");
 const generateShiprocketId = require("../utils/generateShiprocketId");
 const fs = require("fs");
 const path = require("path");
@@ -134,12 +135,20 @@ const normalizeVariants = (
 // GET PRODUCT BY ID
 // =====================================================
 
+// =====================================================
+// GET PRODUCT BY ID WITH REVIEWS
+// =====================================================
+
 const getProductById = async (
   req,
   res
 ) => {
   try {
     const { id } = req.params;
+
+    // =================================================
+    // FIND PRODUCT
+    // =================================================
 
     const product =
       await Product.findById(id);
@@ -152,12 +161,39 @@ const getProductById = async (
       });
     }
 
+    // =================================================
+    // FETCH APPROVED REVIEWS
+    // =================================================
+
+    const reviews =
+      await Review.find({
+        product: product._id,
+        isApproved: true,
+      })
+        .populate(
+          "user",
+          "name"
+        )
+        .sort({
+          createdAt: -1,
+        });
+
+    // =================================================
+    // RETURN PRODUCT + REVIEWS
+    // =================================================
+
     return res.status(200).json({
       success: true,
       message:
         "Product fetched successfully",
-      product,
+
+      product: {
+        ...product.toObject(),
+
+        reviews,
+      },
     });
+
   } catch (error) {
     console.error(
       "Get product by ID error:",
