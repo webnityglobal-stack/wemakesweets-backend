@@ -14,9 +14,14 @@ const uploadReel = async (req, res) => {
       });
     }
 
+    // Backend base URL
+    const baseUrl =
+      process.env.BACKEND_URL ||
+      `${req.protocol}://${req.get("host")}`;
+
     const reels = req.files.map((file) => ({
       filename: file.filename,
-      url: `/uploads/reels/${file.filename}`,
+      url: `${baseUrl}/uploads/reels/${file.filename}`,
     }));
 
     return res.status(201).json({
