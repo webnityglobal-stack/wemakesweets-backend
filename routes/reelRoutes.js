@@ -1,9 +1,11 @@
 const express = require("express");
-const uploadMiddleware = require("../middleware/uploadMiddleware");
 
 const router = express.Router();
 
-const { uploadReel } = require("../controllers/reelController");
+const {
+  uploadReel,
+  deleteReel,
+} = require("../controllers/reelController");
 
 const {
   uploadReel: reelUpload,
@@ -12,14 +14,29 @@ const {
 const authMiddleware = require("../middleware/authMiddleware");
 const adminMiddleware = require("../middleware/adminMiddleware");
 
-// Upload reels
+// =====================================================
+// UPLOAD REELS
+// POST /api/reels/upload
+// =====================================================
+
 router.post(
   "/upload",
   authMiddleware,
   adminMiddleware,
   reelUpload.array("reels", 5),
-  uploadReel,
+  uploadReel
 );
 
+// =====================================================
+// DELETE REEL
+// DELETE /api/reels/:filename
+// =====================================================
+
+router.delete(
+  "/:filename",
+  authMiddleware,
+  adminMiddleware,
+  deleteReel
+);
 
 module.exports = router;
