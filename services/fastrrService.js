@@ -226,63 +226,77 @@ const createCheckout = async (payload) => {
 // the actual response structure.
 // =====================================================
 
-const fetchFastRROrderDetails = async (orderId) => {
-  const payload = {
-    order_id: String(orderId),
-    timestamp: new Date().toISOString(),
-  };
+const fetchFastRROrderDetails = async (gatewayOrderId) => {
+  try {
+    const payload = {
+      order_id: String(gatewayOrderId),
+      timestamp: new Date().toISOString(),
+    };
 
-  const rawBody = JSON.stringify(payload);
+    const rawBody = JSON.stringify(payload);
 
-  const hmac = generateHmac(rawBody);
+    const hmac = generateHmac(rawBody);
 
-  const headers = {
-    "Content-Type": "application/json",
-    "X-Api-Key": process.env.FASTRR_API_KEY,
-    "X-Api-HMAC-SHA256": hmac,
-  };
+    const headers = {
+      "Content-Type": "application/json",
+      "X-Api-Key": process.env.FASTRR_API_KEY,
+      "X-Api-HMAC-SHA256": hmac,
+    };
 
-  const url =
-"https://checkout-api.shiprocket.com/api/v1/custom-platform-order/details"
-  console.log("========================================");
-  console.log("FETCHING FASTRR ORDER DETAILS");
-  console.log("URL:", url);
-  console.log("Order ID:", orderId);
-  console.log("Payload:", rawBody);
-  console.log("API KEY EXISTS:", !!process.env.FASTRR_API_KEY);
-  console.log("API KEY LENGTH:", process.env.FASTRR_API_KEY?.length);
-  console.log("SECRET EXISTS:", !!process.env.FASTRR_API_SECRET);
-  console.log("SECRET LENGTH:", process.env.FASTRR_API_SECRET?.length);
-  console.log("HMAC:", hmac);
-  console.log("========================================");
+    const url =
+      "https://checkout-api.shiprocket.com/api/v1/custom-platform-order/details";
 
-  const response = await axios.post(url, rawBody, {
-    headers,
-    timeout: 30000,
-    validateStatus: () => true,
-  });
+    console.log("========================================");
+    console.log("FETCHING FASTRR ORDER DETAILS");
+    console.log("Gateway Order ID:", gatewayOrderId);
+    console.log("Payload:", rawBody);
+    console.log("========================================");
 
-  console.log("========== FASTRR ORDER DETAILS RESPONSE ==========");
-  console.log("HTTP STATUS:", response.status);
-  console.log("RESPONSE DATA:", response.data);
-  console.log("====================================================");
-
-  if (response.status >= 400) {
-    const error = new Error(
-      response.data?.result ||
-      response.data?.message ||
-      `FastRR Order Details API failed: ${response.status}`
+    const response = await axios.post(
+      url,
+      rawBody,
+      {
+        headers,
+        timeout: 30000,
+        validateStatus: () => true,
+      }
     );
 
-    error.response = {
-      status: response.status,
-      data: response.data,
-    };
+    console.log(
+      "FASTrr ORDER DETAILS RESPONSE:",
+      JSON.stringify(
+        response.data,
+        null,
+        2
+      )
+    );
+
+    if (response.status >= 400) {
+      const error = new Error(
+        response.data?.result ||
+        response.data?.message ||
+        `FastRR API failed: ${response.status}`
+      );
+
+      error.response = {
+        status: response.status,
+        data: response.data,
+      };
+
+      throw error;
+    }
+
+    return response.data;
+
+  } catch (error) {
+    console.error(
+      "FETCH FASTRR DETAILS ERROR:",
+      error.response?.data ||
+      error.message
+    );
 
     throw error;
   }
-
-  return response.data;
 };
 
 
