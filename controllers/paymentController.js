@@ -2053,6 +2053,95 @@ const getPayment = async (
 };
 
 // =====================================================
+// GET FASTRR CHECKOUT DETAILS
+//
+// GET /api/payment/checkout-address/:orderId
+// =====================================================
+
+const getCheckoutAddress = async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { orderId } = req.params;
+
+    // ==========================================
+    // AUTH
+    // ==========================================
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    // ==========================================
+    // ORDER ID
+    // ==========================================
+
+    if (!orderId) {
+      return res.status(400).json({
+        success: false,
+        message: "Order ID is required",
+      });
+    }
+
+    // ==========================================
+    // FIND OUR ORDER
+    // ==========================================
+
+    const order = await Order.findOne({
+      orderId,
+      user: userId,
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    // ==========================================
+    // FETCH FASTRR DETAILS
+    // ==========================================
+
+    const checkoutDetails =
+      await fetchFastRROrderDetails(orderId);
+
+    // ==========================================
+    // RETURN RESPONSE
+    // ==========================================
+
+    return res.status(200).json({
+      success: true,
+      message: "Checkout details fetched successfully",
+
+      orderId,
+
+      checkoutDetails,
+    });
+
+  } catch (error) {
+    console.error(
+      "GET CHECKOUT DETAILS ERROR:",
+      error.response?.data ||
+      error.message
+    );
+
+    return res.status(
+      error.response?.status || 500
+    ).json({
+      success: false,
+      message: "Unable to fetch checkout details",
+
+      error:
+        error.response?.data ||
+        error.message,
+    });
+  }
+};
+
+// =====================================================
 // EXPORTS
 // =====================================================
 
@@ -2062,4 +2151,5 @@ module.exports = {
   paymentFailed,
   fastrrWebhook,
   getPayment,
+  getCheckoutAddress,
 };

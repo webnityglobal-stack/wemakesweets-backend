@@ -8,6 +8,7 @@ const {
   paymentFailed,
   fastrrWebhook,
   getPayment,
+  getCheckoutAddress,
 } = require("../controllers/paymentController");
 
 const authMiddleware =
@@ -67,6 +68,12 @@ router.get(
   "/:paymentId",
   authMiddleware,
   getPayment
+);
+
+router.get(
+  "/checkout-address/:orderId",
+  authMiddleware,
+  getCheckoutAddress
 );
 
 
