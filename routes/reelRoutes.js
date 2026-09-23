@@ -23,7 +23,7 @@ router.post(
   "/upload",
   authMiddleware,
   adminMiddleware,
-  reelUpload.array("reels", 5),
+  reelUpload.array("reels", 12),
   uploadReel
 );
 
