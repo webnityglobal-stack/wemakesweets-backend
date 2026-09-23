@@ -2059,9 +2059,27 @@ const getPayment = async (
 // GET /api/payment/checkout-address/:orderId
 // =====================================================
 
+// =====================================================
+// GET FASTRR CHECKOUT DETAILS
+//
+// GET /api/payment/checkout-address/:orderId
+//
+// :orderId = OUR INTERNAL ORDER ID
+// Example:
+// WMS-1790144369767
+//
+// Internally this function finds:
+// payment.gatewayOrderId
+//
+// Example:
+// 6ab36f722ac3e93b0de445de
+// =====================================================
+
 const getCheckoutAddress = async (req, res) => {
   try {
+
     const userId = getUserId(req);
+
     const { orderId } = req.params;
 
     // ==========================================
@@ -2076,7 +2094,7 @@ const getCheckoutAddress = async (req, res) => {
     }
 
     // ==========================================
-    // ORDER ID
+    // VALIDATE ORDER ID
     // ==========================================
 
     if (!orderId) {
@@ -2091,7 +2109,7 @@ const getCheckoutAddress = async (req, res) => {
     // ==========================================
 
     const order = await Order.findOne({
-      orderId,
+      orderId: String(orderId),
       user: userId,
     });
 
@@ -2103,11 +2121,75 @@ const getCheckoutAddress = async (req, res) => {
     }
 
     // ==========================================
+    // FIND PAYMENT
+    // ==========================================
+
+    const payment = await Payment.findOne({
+      order: order._id,
+      user: userId,
+    });
+
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: "Payment not found for this order",
+      });
+    }
+
+    // ==========================================
+    // GET FASTRR GATEWAY ORDER ID
+    // ==========================================
+
+    const gatewayOrderId =
+      payment.gatewayOrderId;
+
+    console.log(
+      "========================================"
+    );
+
+    console.log(
+      "GET CHECKOUT ADDRESS"
+    );
+
+    console.log(
+      "Our Order ID:",
+      order.orderId
+    );
+
+    console.log(
+      "Payment ID:",
+      payment._id
+    );
+
+    console.log(
+      "FastRR Gateway Order ID:",
+      gatewayOrderId
+    );
+
+    console.log(
+      "========================================"
+    );
+
+    // ==========================================
+    // GATEWAY ID REQUIRED
+    // ==========================================
+
+    if (!gatewayOrderId) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "FastRR gateway order ID not found for this payment",
+      });
+    }
+
+    // ==========================================
     // FETCH FASTRR DETAILS
     // ==========================================
 
     const checkoutDetails =
-      await fetchFastRROrderDetails(orderId);
+      await fetchFastRROrderDetails(
+        gatewayOrderId
+      );
 
     // ==========================================
     // RETURN RESPONSE
@@ -2115,14 +2197,21 @@ const getCheckoutAddress = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Checkout details fetched successfully",
 
-      orderId,
+      message:
+        "Checkout details fetched successfully",
+
+      orderId:
+        order.orderId,
+
+      gatewayOrderId:
+        gatewayOrderId,
 
       checkoutDetails,
     });
 
   } catch (error) {
+
     console.error(
       "GET CHECKOUT DETAILS ERROR:",
       error.response?.data ||
@@ -2133,7 +2222,9 @@ const getCheckoutAddress = async (req, res) => {
       error.response?.status || 500
     ).json({
       success: false,
-      message: "Unable to fetch checkout details",
+
+      message:
+        "Unable to fetch checkout details",
 
       error:
         error.response?.data ||
