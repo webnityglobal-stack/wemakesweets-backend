@@ -1527,6 +1527,55 @@ const fastrrWebhook = async (
           )
         );
 
+        const checkoutAddress =
+  checkoutOrderDetails?.result?.shipping_address;
+
+if (checkoutAddress) {
+  order.shippingAddress = {
+    name: [
+      checkoutAddress.first_name,
+      checkoutAddress.last_name,
+    ]
+      .filter(Boolean)
+      .join(" "),
+
+    phone:
+      checkoutAddress.phone,
+
+    email:
+      checkoutAddress.email,
+
+    address:
+      checkoutAddress.line1,
+
+    address2:
+      checkoutAddress.line2 || "",
+
+    city:
+      checkoutAddress.city,
+
+    pincode:
+      checkoutAddress.pincode,
+
+    state:
+      checkoutAddress.state,
+
+    country:
+      checkoutAddress.country || "India",
+  };
+
+  await order.save();
+
+  console.log(
+    "FastRR shipping address saved:",
+    JSON.stringify(
+      order.shippingAddress,
+      null,
+      2
+    )
+  );
+}
+
         console.log(
           "===================================================="
         );
