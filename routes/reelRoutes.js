@@ -4,6 +4,7 @@ const router = express.Router();
 
 const {
   uploadReel,
+  getReels,
   deleteReel,
 } = require("../controllers/reelController");
 
@@ -13,6 +14,16 @@ const {
 
 const authMiddleware = require("../middleware/authMiddleware");
 const adminMiddleware = require("../middleware/adminMiddleware");
+
+// =====================================================
+// GET ALL REELS
+// GET /api/reels
+// =====================================================
+
+router.get(
+  "/",
+  getReels
+);
 
 // =====================================================
 // UPLOAD REELS
