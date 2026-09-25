@@ -20,6 +20,7 @@ app.use(
     origin: [
       "https://wemakesweets.vercel.app",
       "http://localhost:5173",
+      "http://localhost:5174",
       "https://we-make-sweets-admin.vercel.app",
       "https://darkslategray-horse-285328.hostingersite.com",
       "https://salmon-coyote-671066.hostingersite.com"
