@@ -8,7 +8,8 @@
     "dev": "nodemon server.js",
     "whatsapp:subscribe": "node scripts/subscribeWhatsapp.js",
     "whatsapp:welcome": "node scripts/testWelcomeMessage.js",
-    "whatsapp:forgot": "node scripts/testForgotPassword.js"
+    "whatsapp:forgot": "node scripts/testForgotPassword.js",
+    "meta:ads": "node scripts/testMetaAds.js"
   },
   "repository": {
     "type": "git",
