@@ -55,6 +55,7 @@ const verifyWebhook = (req, res) => {
 /**
  * Send the main Welcome menu with 3 interactive buttons
  */
+
 const sendMainMenu = async (to, name) => {
   clearSession(to);
 

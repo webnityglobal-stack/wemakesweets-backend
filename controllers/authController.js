@@ -78,12 +78,26 @@ const signup = async (req, res) => {
       }
     );
 
-    // Send Welcome WhatsApp Notification (wms_welcome template)
-    whatsappService
-      .sendWelcomeTemplate(user.phone, user.name)
-      .catch((waErr) =>
-        console.error("WhatsApp welcome template error:", waErr.message)
-      );
+    // Send Welcome WhatsApp Notification (template + auto-retry + text fallback)
+    if (user.phone) {
+      whatsappService
+        .sendWelcomeNotification(user.phone, user.name)
+        .then((res) => {
+          if (res && res.success) {
+            console.log(`🎉 Welcome WhatsApp notification sent to ${user.phone}`);
+          } else if (res && res.notOnWhatsApp) {
+            console.log(`ℹ️ Phone number ${user.phone} is not registered on WhatsApp.`);
+          } else {
+            console.warn(
+              `⚠️ Could not deliver WhatsApp welcome to ${user.phone}:`,
+              res?.error?.message || res?.error || res?.templateError
+            );
+          }
+        })
+        .catch((waErr) =>
+          console.error("WhatsApp welcome notification error:", waErr.message)
+        );
+    }
 
     // Send Welcome Email
     if (user.email) {
@@ -214,64 +228,82 @@ const login = async (req, res) => {
 };
 
 // =====================================================
-// FORGOT PASSWORD - SEND OTP
+// HELPER: FIND USER BY EMAIL OR PHONE
+// =====================================================
+
+const findUserByEmailOrPhone = async (identifier) => {
+  const input = String(identifier || "").trim();
+  if (!input) return { user: null, isEmail: false, channel: null };
+
+  const isEmail = input.includes("@");
+  if (isEmail) {
+    const user = await User.findOne({ email: input.toLowerCase().trim() });
+    return { user, isEmail: true, channel: "email" };
+  }
+
+  // Handle phone
+  const cleaned = input.replace(/\D/g, "");
+  const stripped = cleaned.replace(/^91/, "").replace(/^0+/, "");
+
+  const user = await User.findOne({
+    $or: [
+      { phone: input },
+      { phone: cleaned },
+      { phone: stripped },
+      { phone: `+91${stripped}` },
+      { phone: `91${stripped}` },
+      { phone: `0${stripped}` },
+    ],
+  });
+
+  return { user, isEmail: false, channel: "whatsapp" };
+};
+
+// =====================================================
+// FORGOT PASSWORD - SEND OTP (EMAIL OR WHATSAPP)
 // =====================================================
 
 const forgotPassword = async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email, phone, identifier } = req.body;
+    const input = String(identifier || email || phone || "").trim();
 
-    if (!email) {
+    if (!input) {
       return res.status(400).json({
         success: false,
-        message: "Email is required",
+        message: "Please enter your registered email address or mobile number.",
       });
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
+    const { user, isEmail, channel } = await findUserByEmailOrPhone(input);
 
-    // Find user
-    const user = await User.findOne({
-      email: normalizedEmail,
-    });
-
-    // Don't reveal whether account exists
     if (!user) {
-      return res.status(200).json({
-        success: true,
-        message:
-          "If an account exists with this email, an OTP has been sent.",
+      return res.status(404).json({
+        success: false,
+        message: isEmail
+          ? "No account found with this email address."
+          : "No account found with this mobile number.",
       });
     }
 
     // =================================================
     // GENERATE 6 DIGIT OTP
     // =================================================
+    const otp = crypto.randomInt(100000, 1000000).toString();
 
-    const otp = crypto
-      .randomInt(100000, 1000000)
-      .toString();
-
-    // =================================================
-    // SAVE OTP
-    // =================================================
-
+    // Save OTP to user model (valid for 10 minutes)
     user.resetPasswordOTP = otp;
-
-    // OTP valid for 10 minutes
-    user.resetPasswordOTPExpire = new Date(
-      Date.now() + 10 * 60 * 1000
-    );
-
+    user.resetPasswordOTPExpire = new Date(Date.now() + 10 * 60 * 1000);
     user.resetPasswordVerified = false;
-
     await user.save();
 
-    // =================================================
-    // SIMPLE TEXT EMAIL
-    // =================================================
+    console.log(`🔐 Password reset OTP generated for ${user.name} via ${channel}: ${otp}`);
 
-    const emailMessage = `Hello ${user.name},
+    if (isEmail) {
+      // =================================================
+      // SEND EMAIL OTP
+      // =================================================
+      const emailMessage = `Hello ${user.name},
 
 We received a request to reset your We Make Sweets account password.
 
@@ -280,7 +312,6 @@ Your password reset OTP is:
 ${otp}
 
 This OTP is valid for 10 minutes.
-
 Please do not share this OTP with anyone.
 
 If you did not request a password reset, please ignore this email.
@@ -288,23 +319,53 @@ If you did not request a password reset, please ignore this email.
 Regards,
 We Make Sweets`;
 
-    // Send email
-    await sendEmail(
-      user.email,
-      "Password Reset OTP - We Make Sweets",
-      emailMessage
-    );
+      await sendEmail(
+        user.email,
+        "Password Reset OTP - We Make Sweets",
+        emailMessage
+      );
 
-    return res.status(200).json({
-      success: true,
-      message: "OTP sent successfully to your email.",
-    });
+      return res.status(200).json({
+        success: true,
+        channel: "email",
+        message: `Password reset OTP has been sent to your email (${user.email}).`,
+      });
+    } else {
+      // =================================================
+      // SEND WHATSAPP OTP
+      // =================================================
+      if (!user.phone) {
+        return res.status(400).json({
+          success: false,
+          message: "No mobile number linked to this account.",
+        });
+      }
+
+      const waRes = await whatsappService.sendResetPasswordOtp(
+        user.phone,
+        otp,
+        user.name
+      );
+
+      if (!waRes.success && waRes.notOnWhatsApp) {
+        return res.status(400).json({
+          success: false,
+          message: "This mobile number is not registered on WhatsApp.",
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        channel: "whatsapp",
+        message: `Password reset OTP has been sent to your WhatsApp number (${user.phone}).`,
+      });
+    }
   } catch (error) {
     console.error("FORGOT PASSWORD ERROR:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Unable to send password reset OTP",
+      message: "Unable to send password reset OTP. Please try again.",
     });
   }
 };
@@ -315,26 +376,22 @@ We Make Sweets`;
 
 const verifyResetOTP = async (req, res) => {
   try {
-    const { email, otp } = req.body;
+    const { email, phone, identifier, otp } = req.body;
+    const input = String(identifier || email || phone || "").trim();
 
-    if (!email || !otp) {
+    if (!input || !otp) {
       return res.status(400).json({
         success: false,
-        message: "Email and OTP are required",
+        message: "Email/phone and OTP are required.",
       });
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
-
-    // Find user
-    const user = await User.findOne({
-      email: normalizedEmail,
-    });
+    const { user } = await findUserByEmailOrPhone(input);
 
     if (!user) {
-      return res.status(400).json({
+      return res.status(404).json({
         success: false,
-        message: "Invalid OTP",
+        message: "Account not found.",
       });
     }
 
@@ -346,11 +403,11 @@ const verifyResetOTP = async (req, res) => {
       });
     }
 
-    // Check OTP
-    if (user.resetPasswordOTP !== otp.toString().trim()) {
+    // Check OTP value
+    if (user.resetPasswordOTP !== String(otp).trim()) {
       return res.status(400).json({
         success: false,
-        message: "Invalid OTP",
+        message: "Invalid OTP. Please check the code and try again.",
       });
     }
 
@@ -365,21 +422,20 @@ const verifyResetOTP = async (req, res) => {
       });
     }
 
-    // OTP verified
+    // Mark as verified
     user.resetPasswordVerified = true;
-
     await user.save();
 
     return res.status(200).json({
       success: true,
-      message: "OTP verified successfully",
+      message: "OTP verified successfully. You can now reset your password.",
     });
   } catch (error) {
     console.error("VERIFY OTP ERROR:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Unable to verify OTP",
+      message: "Unable to verify OTP. Please try again.",
     });
   }
 };
@@ -390,33 +446,29 @@ const verifyResetOTP = async (req, res) => {
 
 const resetPassword = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, phone, identifier, password } = req.body;
+    const input = String(identifier || email || phone || "").trim();
 
-    if (!email || !password) {
+    if (!input || !password) {
       return res.status(400).json({
         success: false,
-        message: "Email and new password are required",
+        message: "Email/phone and new password are required.",
       });
     }
 
     if (password.length < 6) {
       return res.status(400).json({
         success: false,
-        message: "Password must be at least 6 characters",
+        message: "Password must be at least 6 characters.",
       });
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
-
-    // Find user
-    const user = await User.findOne({
-      email: normalizedEmail,
-    });
+    const { user } = await findUserByEmailOrPhone(input);
 
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: "User not found",
+        message: "User not found.",
       });
     }
 
@@ -424,26 +476,15 @@ const resetPassword = async (req, res) => {
     if (!user.resetPasswordVerified) {
       return res.status(400).json({
         success: false,
-        message:
-          "Please verify OTP before resetting password",
+        message: "Please verify OTP before resetting password.",
       });
     }
 
-    // =================================================
-    // HASH NEW PASSWORD
-    // =================================================
-
-    const hashedPassword = await bcrypt.hash(
-      password,
-      10
-    );
-
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(password, 10);
     user.password = hashedPassword;
 
-    // =================================================
-    // CLEAR OTP DATA
-    // =================================================
-
+    // Clear reset OTP fields
     user.resetPasswordOTP = null;
     user.resetPasswordOTPExpire = null;
     user.resetPasswordVerified = false;
@@ -460,7 +501,7 @@ const resetPassword = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Unable to reset password",
+      message: "Unable to reset password. Please try again.",
     });
   }
 };

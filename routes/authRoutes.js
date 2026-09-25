@@ -30,7 +30,8 @@ router.post("/forgot-password", forgotPassword);
 // Verify OTP
 router.post("/verify-reset-otp", verifyResetOTP);
 
-// Reset Password
+// Reset Password (supports both PUT and POST)
 router.put("/reset-password", resetPassword);
+router.post("/reset-password", resetPassword);
 
 module.exports = router;

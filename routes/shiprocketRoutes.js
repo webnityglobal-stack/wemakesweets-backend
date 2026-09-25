@@ -43,8 +43,13 @@ router.get(
 );
 
 
-// Cancel shipment
+// Cancel shipment (supports both PUT and POST)
 router.put(
+  "/cancel/:orderId",
+  authMiddleware,
+  cancelShipment
+);
+router.post(
   "/cancel/:orderId",
   authMiddleware,
   cancelShipment
