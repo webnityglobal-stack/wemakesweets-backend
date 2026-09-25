@@ -7,7 +7,8 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "whatsapp:subscribe": "node scripts/subscribeWhatsapp.js",
-    "whatsapp:welcome": "node scripts/testWelcomeMessage.js"
+    "whatsapp:welcome": "node scripts/testWelcomeMessage.js",
+    "whatsapp:forgot": "node scripts/testForgotPassword.js"
   },
   "repository": {
     "type": "git",

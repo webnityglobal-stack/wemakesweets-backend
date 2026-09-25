@@ -254,7 +254,61 @@ const sendWelcomeNotification = async (to, customerName) => {
  * {{1}} = OTP
  */
 const sendLoginOtpTemplate = async (to, otp) => {
-  return await sendTemplateMessage(to, "wms_login_otp", [otp]);
+  return await sendTemplateMessage(to, "wms_login_otp", [otp], "en");
+};
+
+/**
+ * Send Password Reset OTP via WhatsApp:
+ * 1. Tries wms_login_otp template (with en/en_US auto-retry)
+ * 2. If template fails/pending, falls back to rich formatted text message
+ */
+const sendResetPasswordOtp = async (to, otp, customerName) => {
+  const formattedPhone = formatPhoneNumber(to);
+  if (!formattedPhone) {
+    return { success: false, error: "Invalid phone number" };
+  }
+
+  const name = customerName || "Customer";
+  console.log(`🔐 [WhatsApp Reset OTP] Sending OTP to ${formattedPhone} (${name})...`);
+
+  // 1. Try sending the official OTP template (wms_login_otp)
+  const templateResult = await sendLoginOtpTemplate(formattedPhone, otp);
+  if (templateResult.success) {
+    console.log(`✅ [WhatsApp Reset OTP] Template 'wms_login_otp' sent successfully to ${formattedPhone}`);
+    return templateResult;
+  }
+
+  // Check if error is because user is not on WhatsApp (Error 131026)
+  const errStr = JSON.stringify(templateResult.error || "");
+  if (errStr.includes("131026") || errStr.toLowerCase().includes("not a valid whatsapp user")) {
+    console.log(`ℹ️ [WhatsApp Reset OTP] Recipient ${formattedPhone} is not registered on WhatsApp.`);
+    return { success: false, notOnWhatsApp: true, error: templateResult.error };
+  }
+
+  console.warn(`⚠️ [WhatsApp Reset OTP] Template failed, attempting text message fallback...`);
+
+  // 2. Fallback: formatted text message (works if user has interacted with the bot within 24h)
+  const fallbackMessage =
+    `🔐 *WeMake Sweets & Snacks - Password Reset*\n\n` +
+    `Hello ${name},\n\n` +
+    `Your password reset verification code is:\n\n` +
+    `👉 *${otp}*\n\n` +
+    `This code is valid for 10 minutes.\n` +
+    `For your security, please do not share this code with anyone.\n\n` +
+    `_If you did not request a password reset, please ignore this message._`;
+
+  const textResult = await sendTextMessage(formattedPhone, fallbackMessage);
+  if (textResult.success) {
+    console.log(`✅ [WhatsApp Reset OTP] Fallback text message sent successfully to ${formattedPhone}`);
+    return textResult;
+  }
+
+  console.error(`❌ [WhatsApp Reset OTP] Both template and text fallback failed to send to ${formattedPhone}`);
+  return {
+    success: false,
+    templateError: templateResult.error,
+    textError: textResult.error,
+  };
 };
 
 /**
@@ -387,6 +441,7 @@ module.exports = {
   sendWelcomeTemplate,
   sendWelcomeNotification,
   sendLoginOtpTemplate,
+  sendResetPasswordOtp,
   sendOrderConfirmedTemplate,
   sendOrderPackedTemplate,
   sendOrderShippedTemplate,
