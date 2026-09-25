@@ -78,12 +78,26 @@ const signup = async (req, res) => {
       }
     );
 
-    // Send Welcome WhatsApp Notification (wms_welcome template)
-    whatsappService
-      .sendWelcomeTemplate(user.phone, user.name)
-      .catch((waErr) =>
-        console.error("WhatsApp welcome template error:", waErr.message)
-      );
+    // Send Welcome WhatsApp Notification (template + auto-retry + text fallback)
+    if (user.phone) {
+      whatsappService
+        .sendWelcomeNotification(user.phone, user.name)
+        .then((res) => {
+          if (res && res.success) {
+            console.log(`🎉 Welcome WhatsApp notification sent to ${user.phone}`);
+          } else if (res && res.notOnWhatsApp) {
+            console.log(`ℹ️ Phone number ${user.phone} is not registered on WhatsApp.`);
+          } else {
+            console.warn(
+              `⚠️ Could not deliver WhatsApp welcome to ${user.phone}:`,
+              res?.error?.message || res?.error || res?.templateError
+            );
+          }
+        })
+        .catch((waErr) =>
+          console.error("WhatsApp welcome notification error:", waErr.message)
+        );
+    }
 
     // Send Welcome Email
     if (user.email) {

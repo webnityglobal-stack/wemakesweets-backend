@@ -25,10 +25,13 @@ const getWhatsappConfig = () => {
 const formatPhoneNumber = (phone) => {
   if (!phone) return "";
   let cleaned = String(phone).replace(/\D/g, "");
+  // Strip leading zeros
+  if (cleaned.startsWith("0")) {
+    cleaned = cleaned.replace(/^0+/, "");
+  }
+  // Standard 10-digit Indian phone number
   if (cleaned.length === 10) {
     cleaned = "91" + cleaned;
-  } else if (cleaned.length === 11 && cleaned.startsWith("0")) {
-    cleaned = "91" + cleaned.substring(1);
   }
   return cleaned;
 };
@@ -112,17 +115,17 @@ const sendInteractiveButtons = async (to, bodyText, buttons = []) => {
 };
 
 /**
- * Send template message
+ * Send template message with auto-retry across language codes (en <-> en_US)
  * @param {string} to - Recipient phone
  * @param {string} templateName - Approved template name
  * @param {Array<string>} bodyParameters - Array of text parameter strings for {{1}}, {{2}}, etc.
- * @param {string} languageCode - Default 'en_US'
+ * @param {string} languageCode - Preferred language code (default 'en')
  */
 const sendTemplateMessage = async (
   to,
   templateName,
   bodyParameters = [],
-  languageCode = "en_US"
+  languageCode = "en"
 ) => {
   const formattedPhone = formatPhoneNumber(to);
   if (!formattedPhone) return { success: false, error: "Invalid phone number" };
@@ -139,19 +142,37 @@ const sendTemplateMessage = async (
     });
   }
 
-  const payload = {
+  const buildPayload = (lang) => ({
     messaging_product: "whatsapp",
     recipient_type: "individual",
     to: formattedPhone,
     type: "template",
     template: {
       name: templateName,
-      language: { code: languageCode },
+      language: { code: lang },
       components: components.length > 0 ? components : undefined,
     },
-  };
+  });
 
-  return await callWhatsappApi(payload);
+  // Try with preferred language (e.g. "en")
+  let result = await callWhatsappApi(buildPayload(languageCode));
+
+  // If failed due to language translation mismatch (Error 132001 or language mismatch), retry with alternate
+  const errStr = JSON.stringify(result.error || "");
+  if (
+    !result.success &&
+    (errStr.includes("132001") ||
+      errStr.toLowerCase().includes("language") ||
+      errStr.toLowerCase().includes("does not exist"))
+  ) {
+    const alternateCode = languageCode === "en" ? "en_US" : "en";
+    console.log(
+      `🔄 Retrying template '${templateName}' with alternate language code: '${alternateCode}'...`
+    );
+    result = await callWhatsappApi(buildPayload(alternateCode));
+  }
+
+  return result;
 };
 
 // =====================================================
@@ -164,7 +185,67 @@ const sendTemplateMessage = async (
  * {{1}} = Customer Name
  */
 const sendWelcomeTemplate = async (to, customerName) => {
-  return await sendTemplateMessage(to, "wms_welcome", [customerName || "Friend"]);
+  return await sendTemplateMessage(to, "wms_welcome", [customerName || "Friend"], "en");
+};
+
+/**
+ * Comprehensive Welcome Notification:
+ * Attempts approved template 'wms_welcome' first (with en/en_US auto-retry).
+ * If template fails (e.g. pending Meta approval), falls back to rich text message.
+ */
+const sendWelcomeNotification = async (to, customerName) => {
+  const formattedPhone = formatPhoneNumber(to);
+  if (!formattedPhone) {
+    console.warn("⚠️ Invalid phone number for welcome message:", to);
+    return { success: false, error: "Invalid phone number" };
+  }
+
+  const name = customerName || "Friend";
+  console.log(`📩 Initiating WhatsApp Welcome message to ${formattedPhone} (${name})...`);
+
+  // 1. Try sending the official wms_welcome template
+  const templateResult = await sendWelcomeTemplate(formattedPhone, name);
+  if (templateResult.success) {
+    console.log(`✅ [WhatsApp Welcome] Template 'wms_welcome' sent successfully to ${formattedPhone}`);
+    return templateResult;
+  }
+
+  // Check if error is because user is not on WhatsApp (Error 131026)
+  const errStr = JSON.stringify(templateResult.error || "");
+  if (errStr.includes("131026") || errStr.toLowerCase().includes("not a valid whatsapp user")) {
+    console.log(`ℹ️ [WhatsApp Welcome] Recipient ${formattedPhone} is not registered on WhatsApp.`);
+    return { success: false, notOnWhatsApp: true, error: templateResult.error };
+  }
+
+  console.warn(
+    `⚠️ [WhatsApp Welcome] Template 'wms_welcome' failed. Attempting text message fallback...`
+  );
+
+  // 2. Fallback: If template failed, try sending a rich text message
+  // (Works if user already chatted with the bot within the 24-hr customer service window)
+  const websiteUrl =
+    process.env.FRONTEND_URL || "https://wemakesweets.vercel.app";
+  const fallbackMessage =
+    `🍬 *Welcome to WeMake Sweets & Snacks, ${name}!* 👋\n\n` +
+    `We're delighted to have you with us! Discover our delicious range of authentic, traditional sweets and snacks, made fresh to bring sweetness to every celebration.\n\n` +
+    `🛍️ *Browse & Order Online:*\n${websiteUrl}/products\n\n` +
+    `Thank you for joining WeMake Sweets & Snacks! ❤️\n` +
+    `_Reply *Hi* anytime to browse products, track orders, or get help._`;
+
+  const textResult = await sendTextMessage(formattedPhone, fallbackMessage);
+  if (textResult.success) {
+    console.log(
+      `✅ [WhatsApp Welcome] Fallback text message sent successfully to ${formattedPhone}`
+    );
+    return textResult;
+  }
+
+  console.error(`❌ [WhatsApp Welcome] Both template and text fallback failed to send to ${formattedPhone}`);
+  return {
+    success: false,
+    templateError: templateResult.error,
+    textError: textResult.error,
+  };
 };
 
 /**
@@ -304,6 +385,7 @@ module.exports = {
   sendInteractiveButtons,
   sendTemplateMessage,
   sendWelcomeTemplate,
+  sendWelcomeNotification,
   sendLoginOtpTemplate,
   sendOrderConfirmedTemplate,
   sendOrderPackedTemplate,
@@ -312,3 +394,4 @@ module.exports = {
   sendOrderDeliveredTemplate,
   sendOrderStatusNotification,
 };
+
