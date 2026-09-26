@@ -1,3 +1,5 @@
+// controllers/paymentController.js
+
 const Order = require("../models/order");
 const Payment = require("../models/payment");
 
@@ -14,7 +16,8 @@ const {
   createShiprocketOrder,
 } = require("../services/shiprocketService");
 
-const whatsappService = require("../services/whatsappService");
+const whatsappService =
+  require("../services/whatsappService");
 
 // =====================================================
 // HELPER: GET USER ID
@@ -52,9 +55,10 @@ const getFirstValue = (...values) => {
 // =====================================================
 
 const isCODPayment = (paymentType) => {
-  const value = String(paymentType || "")
-    .trim()
-    .toUpperCase();
+  const value =
+    String(paymentType || "")
+      .trim()
+      .toUpperCase();
 
   return (
     value === "COD" ||
@@ -64,19 +68,30 @@ const isCODPayment = (paymentType) => {
 };
 
 // =====================================================
-// HELPER: NORMALIZE INDIAN PHONE NUMBER
+// HELPER: NORMALIZE PHONE
 // =====================================================
 
 const normalizePhone = (phone) => {
   if (!phone) {
-    throw new Error("Customer phone number is missing");
+    throw new Error(
+      "Customer phone number is missing"
+    );
   }
 
-  const digits = String(phone).replace(/\D/g, "");
+  const digits =
+    String(phone).replace(
+      /\D/g,
+      ""
+    );
 
-  const normalized = digits.slice(-10);
+  const normalized =
+    digits.slice(-10);
 
-  if (!/^\d{10}$/.test(normalized)) {
+  if (
+    !/^\d{10}$/.test(
+      normalized
+    )
+  ) {
     throw new Error(
       `Invalid customer phone number: ${phone}`
     );
@@ -86,7 +101,7 @@ const normalizePhone = (phone) => {
 };
 
 // =====================================================
-// HELPER: UPDATE ORDER ADDRESS FROM FASTRR
+// UPDATE ORDER ADDRESS FROM FASTRR
 // =====================================================
 
 const updateOrderAddressFromFastRR = async (
@@ -94,7 +109,9 @@ const updateOrderAddressFromFastRR = async (
   checkoutOrderDetails
 ) => {
   const checkoutAddress =
-    checkoutOrderDetails?.result?.shipping_address;
+    checkoutOrderDetails
+      ?.result
+      ?.shipping_address;
 
   console.log(
     "========================================"
@@ -179,36 +196,17 @@ const updateOrderAddressFromFastRR = async (
       "India",
   };
 
-  // Important for nested/object fields
-  order.markModified("shippingAddress");
+  order.markModified(
+    "shippingAddress"
+  );
 
   await order.save();
-
-  console.log(
-    "========================================"
-  );
-
-  console.log(
-    "FASTRR ADDRESS SAVED IN OUR ORDER"
-  );
-
-  console.log(
-    JSON.stringify(
-      order.shippingAddress,
-      null,
-      2
-    )
-  );
-
-  console.log(
-    "========================================"
-  );
 
   return true;
 };
 
 // =====================================================
-// HELPER: SHIPROCKET ORDER PAYLOAD
+// SHIPROCKET PAYLOAD
 // =====================================================
 
 const buildShiprocketOrderPayload = (
@@ -219,26 +217,33 @@ const buildShiprocketOrderPayload = (
     order.shippingAddress || {};
 
   const phone =
-    normalizePhone(address.phone);
+    normalizePhone(
+      address.phone
+    );
 
   const shiprocketItems =
-    order.items.map((item) => ({
-      name: item.name,
+    order.items.map(
+      (item) => ({
+        name:
+          item.name,
 
-      sku:
-        item.sku ||
-        item.product?.toString(),
+        sku:
+          item.sku ||
+          item.product?.toString(),
 
-      units:
-        Number(item.quantity),
+        units:
+          Number(item.quantity),
 
-      selling_price:
-        Number(item.price),
-    }));
+        selling_price:
+          Number(item.price),
+      })
+    );
 
   const isCOD =
     String(paymentMethod)
-      .toUpperCase() === "COD";
+      .trim()
+      .toUpperCase() ===
+    "COD";
 
   return {
     order_id:
@@ -256,9 +261,7 @@ const buildShiprocketOrderPayload = (
     comment:
       "We Make Sweets Order",
 
-    // ========================================
     // BILLING
-    // ========================================
 
     billing_customer_name:
       address.name,
@@ -282,7 +285,8 @@ const buildShiprocketOrderPayload = (
       address.state,
 
     billing_country:
-      address.country || "India",
+      address.country ||
+      "India",
 
     billing_email:
       address.email || "",
@@ -290,9 +294,7 @@ const buildShiprocketOrderPayload = (
     billing_phone:
       phone,
 
-    // ========================================
     // SHIPPING
-    // ========================================
 
     shipping_is_billing:
       true,
@@ -319,7 +321,8 @@ const buildShiprocketOrderPayload = (
       address.state,
 
     shipping_country:
-      address.country || "India",
+      address.country ||
+      "India",
 
     shipping_email:
       address.email || "",
@@ -327,16 +330,12 @@ const buildShiprocketOrderPayload = (
     shipping_phone:
       phone,
 
-    // ========================================
     // ITEMS
-    // ========================================
 
     order_items:
       shiprocketItems,
 
-    // ========================================
     // PAYMENT
-    // ========================================
 
     payment_method:
       isCOD
@@ -356,11 +355,11 @@ const buildShiprocketOrderPayload = (
       0,
 
     sub_total:
-      Number(order.totalAmount),
+      Number(
+        order.totalAmount
+      ),
 
-    // ========================================
     // PACKAGE
-    // ========================================
 
     length:
       Number(
@@ -389,9 +388,7 @@ const buildShiprocketOrderPayload = (
 };
 
 // =====================================================
-// 1. CREATE ONLINE PAYMENT / FASTRR CHECKOUT
-//
-// POST /api/payment/create
+// CREATE ONLINE PAYMENT / FASTRR CHECKOUT
 // =====================================================
 
 const createPayment = async (
@@ -409,14 +406,16 @@ const createPayment = async (
     if (!userId) {
       return res.status(401).json({
         success: false,
-        message: "Unauthorized",
+        message:
+          "Unauthorized",
       });
     }
 
     if (!orderId) {
       return res.status(400).json({
         success: false,
-        message: "orderId is required",
+        message:
+          "orderId is required",
       });
     }
 
@@ -431,9 +430,14 @@ const createPayment = async (
     if (!order) {
       return res.status(404).json({
         success: false,
-        message: "Order not found",
+        message:
+          "Order not found",
       });
     }
+
+    // ========================================
+    // FASTRR ONLY FOR ONLINE
+    // ========================================
 
     if (
       order.paymentMethod !==
@@ -458,7 +462,9 @@ const createPayment = async (
     }
 
     const amount =
-      Number(order.totalAmount);
+      Number(
+        order.totalAmount
+      );
 
     if (
       !Number.isFinite(amount) ||
@@ -473,23 +479,29 @@ const createPayment = async (
 
     let payment =
       await Payment.findOne({
-        order: order._id,
-        user: userId,
+        order:
+          order._id,
+
+        user:
+          userId,
       });
 
     if (!payment) {
       payment =
         await Payment.create({
-          order: order._id,
+          order:
+            order._id,
 
           orderId:
             order.orderId,
 
-          user: userId,
+          user:
+            userId,
 
           amount,
 
-          currency: "INR",
+          currency:
+            "INR",
 
           paymentMethod:
             "ONLINE",
@@ -567,7 +579,9 @@ const createPayment = async (
           ),
 
         quantity:
-          Number(item.quantity),
+          Number(
+            item.quantity
+          ),
       });
     }
 
@@ -577,7 +591,8 @@ const createPayment = async (
 
     const frontendUrl =
       String(
-        process.env.FRONTEND_URL ||
+        process.env
+          .FRONTEND_URL ||
         ""
       ).replace(
         /\/+$/,
@@ -600,30 +615,7 @@ const createPayment = async (
     };
 
     console.log(
-      "========================================"
-    );
-
-    console.log(
-      "CREATING FASTRR CHECKOUT"
-    );
-
-    console.log(
-      "Order ID:",
-      order.orderId
-    );
-
-    console.log(
-      "Payment ID:",
-      payment._id
-    );
-
-    console.log(
-      "Amount:",
-      amount
-    );
-
-    console.log(
-      "FastRR Payload:",
+      "CREATING FASTRR CHECKOUT",
       JSON.stringify(
         payload,
         null,
@@ -631,29 +623,22 @@ const createPayment = async (
       )
     );
 
-    console.log(
-      "========================================"
-    );
-
     const fastrrResponse =
       await createCheckout(
         payload
       );
 
-    console.log(
-      "FASTRR RESPONSE:",
-      JSON.stringify(
-        fastrrResponse,
-        null,
-        2
-      )
-    );
-
     const checkoutToken =
       getFirstValue(
-        fastrrResponse?.result?.token,
+        fastrrResponse
+          ?.result
+          ?.token,
+
         fastrrResponse?.token,
-        fastrrResponse?.data?.token
+
+        fastrrResponse
+          ?.data
+          ?.token
       );
 
     const gatewayOrderId =
@@ -682,18 +667,6 @@ const createPayment = async (
           ?.gateway_order_id
       );
 
-    console.log(
-      "FastRR Checkout Token:",
-      checkoutToken
-        ? "RECEIVED"
-        : "MISSING"
-    );
-
-    console.log(
-      "FastRR Gateway Order ID:",
-      gatewayOrderId
-    );
-
     if (!checkoutToken) {
       return res.status(502).json({
         success: false,
@@ -707,7 +680,9 @@ const createPayment = async (
 
     payment.gatewayOrderId =
       gatewayOrderId
-        ? String(gatewayOrderId)
+        ? String(
+            gatewayOrderId
+          )
         : null;
 
     payment.gatewayResponse =
@@ -753,7 +728,6 @@ const createPayment = async (
     });
 
   } catch (error) {
-
     console.error(
       "CREATE PAYMENT ERROR:",
       error.response?.data ||
@@ -777,7 +751,7 @@ const createPayment = async (
 };
 
 // =====================================================
-// 2. PAYMENT SUCCESS / GET PAYMENT STATUS
+// PAYMENT SUCCESS / GET PAYMENT STATUS
 // =====================================================
 
 const paymentSuccess = async (
@@ -807,8 +781,11 @@ const paymentSuccess = async (
     if (paymentId) {
       payment =
         await Payment.findOne({
-          _id: paymentId,
-          user: userId,
+          _id:
+            paymentId,
+
+          user:
+            userId,
         });
     }
 
@@ -822,7 +799,9 @@ const paymentSuccess = async (
             String(
               gatewayOrderId
             ),
-          user: userId,
+
+          user:
+            userId,
         });
     }
 
@@ -833,7 +812,9 @@ const paymentSuccess = async (
       payment =
         await Payment.findOne({
           orderId,
-          user: userId,
+
+          user:
+            userId,
         });
     }
 
@@ -864,11 +845,17 @@ const paymentSuccess = async (
         status:
           payment.status,
 
+        paymentMethod:
+          payment.paymentMethod,
+
         paymentId:
           payment.paymentId,
 
         transactionId:
           payment.transactionId,
+
+        gateway:
+          payment.gateway,
 
         gatewayOrderId:
           payment.gatewayOrderId,
@@ -879,7 +866,6 @@ const paymentSuccess = async (
     });
 
   } catch (error) {
-
     console.error(
       "PAYMENT SUCCESS ERROR:",
       error
@@ -898,7 +884,7 @@ const paymentSuccess = async (
 };
 
 // =====================================================
-// 3. PAYMENT FAILED
+// PAYMENT FAILED
 // =====================================================
 
 const paymentFailed = async (
@@ -930,8 +916,11 @@ const paymentFailed = async (
     if (paymentId) {
       payment =
         await Payment.findOne({
-          _id: paymentId,
-          user: userId,
+          _id:
+            paymentId,
+
+          user:
+            userId,
         });
     }
 
@@ -945,7 +934,9 @@ const paymentFailed = async (
             String(
               gatewayOrderId
             ),
-          user: userId,
+
+          user:
+            userId,
         });
     }
 
@@ -956,7 +947,9 @@ const paymentFailed = async (
       payment =
         await Payment.findOne({
           orderId,
-          user: userId,
+
+          user:
+            userId,
         });
     }
 
@@ -965,6 +958,22 @@ const paymentFailed = async (
         success: false,
         message:
           "Payment not found",
+      });
+    }
+
+    // ========================================
+    // COD PAYMENT SHOULD NOT BE MARKED FAILED
+    // THROUGH FASTRR
+    // ========================================
+
+    if (
+      payment.paymentMethod ===
+      "COD"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "COD order does not use online payment",
       });
     }
 
@@ -1008,7 +1017,6 @@ const paymentFailed = async (
     });
 
   } catch (error) {
-
     console.error(
       "PAYMENT FAILED ERROR:",
       error
@@ -1027,9 +1035,7 @@ const paymentFailed = async (
 };
 
 // =====================================================
-// 4. FASTRR WEBHOOK
-//
-// POST /api/payment/fastrr/webhook
+// FASTRR WEBHOOK
 // =====================================================
 
 const fastrrWebhook = async (
@@ -1037,13 +1043,16 @@ const fastrrWebhook = async (
   res
 ) => {
   try {
-
     console.log(
       "========================================"
     );
 
     console.log(
       "FASTRR CHECKOUT WEBHOOK RECEIVED"
+    );
+
+    console.log(
+      "========================================"
     );
 
     // ========================================
@@ -1053,10 +1062,14 @@ const fastrrWebhook = async (
     let rawBody;
 
     if (
-      Buffer.isBuffer(req.body)
+      Buffer.isBuffer(
+        req.body
+      )
     ) {
       rawBody =
-        req.body.toString("utf8");
+        req.body.toString(
+          "utf8"
+        );
 
     } else if (
       typeof req.body ===
@@ -1082,7 +1095,9 @@ const fastrrWebhook = async (
     // ========================================
 
     const receivedApiKey =
-      req.headers["x-api-key"];
+      req.headers[
+        "x-api-key"
+      ];
 
     const receivedHmac =
       req.headers[
@@ -1099,7 +1114,6 @@ const fastrrWebhook = async (
     if (
       requireWebhookHmac
     ) {
-
       if (
         !receivedApiKey ||
         receivedApiKey !==
@@ -1137,7 +1151,6 @@ const fastrrWebhook = async (
     } else if (
       receivedHmac
     ) {
-
       const validHmac =
         verifyHmac(
           rawBody,
@@ -1173,15 +1186,10 @@ const fastrrWebhook = async (
 
     try {
       webhookData =
-        JSON.parse(rawBody);
-
+        JSON.parse(
+          rawBody
+        );
     } catch (error) {
-
-      console.error(
-        "Invalid webhook JSON:",
-        error.message
-      );
-
       return res.status(400).json({
         success: false,
         message:
@@ -1205,6 +1213,7 @@ const fastrrWebhook = async (
     const webhookOrderId =
       getFirstValue(
         webhookData?.order_id,
+
         webhookData?.orderId
       );
 
@@ -1220,6 +1229,7 @@ const fastrrWebhook = async (
     const paymentType =
       getFirstValue(
         webhookData?.payment_type,
+
         webhookData?.paymentType
       );
 
@@ -1233,17 +1243,6 @@ const fastrrWebhook = async (
             ?.totalAmountPayable
         )
       );
-
-    const cartItems =
-      Array.isArray(
-        webhookData
-          ?.cart_data
-          ?.items
-      )
-        ? webhookData
-            .cart_data
-            .items
-        : [];
 
     console.log(
       "Webhook Order ID:",
@@ -1266,7 +1265,7 @@ const fastrrWebhook = async (
     );
 
     // ========================================
-    // VALIDATE WEBHOOK ORDER ID
+    // VALIDATE ORDER ID
     // ========================================
 
     if (!webhookOrderId) {
@@ -1279,16 +1278,6 @@ const fastrrWebhook = async (
 
     // ========================================
     // FIND PAYMENT
-    //
-    // IMPORTANT:
-    // webhookOrderId here should be FastRR
-    // gateway order id.
-    //
-    // Example:
-    // 6ab37c2aada81805186081c4
-    //
-    // NOT:
-    // WMS-1790147574720
     // ========================================
 
     let payment =
@@ -1298,10 +1287,6 @@ const fastrrWebhook = async (
             webhookOrderId
           ),
       });
-
-    // ========================================
-    // FALLBACK OUR ORDER ID
-    // ========================================
 
     if (!payment) {
       payment =
@@ -1314,7 +1299,6 @@ const fastrrWebhook = async (
     }
 
     if (!payment) {
-
       console.error(
         "Payment not found for FastRR webhook:",
         webhookOrderId
@@ -1322,19 +1306,13 @@ const fastrrWebhook = async (
 
       return res.status(404).json({
         success: false,
-
         message:
           "Payment not found for webhook order",
       });
     }
 
-    console.log(
-      "Payment Found:",
-      payment._id
-    );
-
     // ========================================
-    // FIND OUR ORDER
+    // FIND ORDER
     // ========================================
 
     const order =
@@ -1347,7 +1325,6 @@ const fastrrWebhook = async (
     if (!order) {
       return res.status(404).json({
         success: false,
-
         message:
           "Order not found for payment",
       });
@@ -1357,6 +1334,70 @@ const fastrrWebhook = async (
       "Order Found:",
       order.orderId
     );
+
+    console.log(
+      "Order Payment Method:",
+      order.paymentMethod
+    );
+
+    console.log(
+      "Payment Payment Method:",
+      payment.paymentMethod
+    );
+
+    // ========================================
+    // CRITICAL PROTECTION
+    //
+    // FASTRR MUST NEVER CHANGE COD ORDER
+    // TO ONLINE
+    // ========================================
+
+    if (
+      order.paymentMethod ===
+      "COD" ||
+      payment.paymentMethod ===
+      "COD"
+    ) {
+      console.log(
+        "FastRR webhook received for COD order."
+      );
+
+      console.log(
+        "COD order will NOT be converted to ONLINE."
+      );
+
+      return res.status(200).json({
+        success: true,
+
+        message:
+          "COD order ignored by FastRR webhook",
+
+        orderId:
+          order.orderId,
+
+        paymentMethod:
+          order.paymentMethod,
+
+        paymentStatus:
+          order.paymentStatus,
+      });
+    }
+
+    // ========================================
+    // ONLINE ORDER PROTECTION
+    // ========================================
+
+    if (
+      order.paymentMethod !==
+      "ONLINE"
+    ) {
+      return res.status(400).json({
+        success: false,
+
+        message:
+          "Invalid payment method for FastRR webhook",
+      });
+    }
 
     // ========================================
     // VALIDATE AMOUNT
@@ -1373,18 +1414,6 @@ const fastrrWebhook = async (
         )
       ) > 0.01
     ) {
-
-      console.error(
-        "FAST RR AMOUNT MISMATCH",
-        {
-          webhookAmount:
-            totalAmount,
-
-          orderAmount:
-            order.totalAmount,
-        }
-      );
-
       return res.status(400).json({
         success: false,
 
@@ -1394,22 +1423,13 @@ const fastrrWebhook = async (
     }
 
     // ========================================
-    // PAYMENT TYPE
-    // ========================================
-
-    const cod =
-      isCODPayment(
-        paymentType
-      );
-
-    // ========================================
     // SUCCESS WEBHOOK
     // ========================================
 
     if (
-      status === "SUCCESS"
+      status ===
+      "SUCCESS"
     ) {
-
       console.log(
         "========================================"
       );
@@ -1433,18 +1453,13 @@ const fastrrWebhook = async (
       );
 
       // ======================================
-      // FETCH FASTRR CHECKOUT DETAILS
+      // FETCH FASTRR DETAILS
       // ======================================
 
       let checkoutOrderDetails =
         null;
 
       try {
-
-        // IMPORTANT:
-        // Always send FastRR gateway order ID.
-        // Never send WMS internal order ID.
-
         const fastRRGatewayOrderId =
           payment.gatewayOrderId;
 
@@ -1452,14 +1467,9 @@ const fastrrWebhook = async (
           !fastRRGatewayOrderId
         ) {
           throw new Error(
-            "FastRR gateway order ID is missing from payment"
+            "FastRR gateway order ID is missing"
           );
         }
-
-        console.log(
-          "Fetching FastRR details using gateway order ID:",
-          fastRRGatewayOrderId
-        );
 
         checkoutOrderDetails =
           await fetchFastRROrderDetails(
@@ -1467,26 +1477,6 @@ const fastrrWebhook = async (
               fastRRGatewayOrderId
             )
           );
-
-        console.log(
-          "========== FASTRR CHECKOUT DETAILS =========="
-        );
-
-        console.log(
-          JSON.stringify(
-            checkoutOrderDetails,
-            null,
-            2
-          )
-        );
-
-        console.log(
-          "=============================================="
-        );
-
-        // ======================================
-        // UPDATE SHIPPING ADDRESS
-        // ======================================
 
         await updateOrderAddressFromFastRR(
           order,
@@ -1496,85 +1486,55 @@ const fastrrWebhook = async (
       } catch (
         checkoutDetailsError
       ) {
-
         console.error(
-          "Unable to fetch FastRR checkout order details:",
+          "Unable to fetch FastRR checkout details:",
           checkoutDetailsError
             ?.response
             ?.data ||
           checkoutDetailsError.message
         );
-
-        // Payment processing continues.
-        // Existing order address will be used
-        // if FastRR address cannot be fetched.
       }
 
       // ======================================
-      // UPDATE PAYMENT
+      // ONLINE PAYMENT
       // ======================================
 
-      const alreadyPaid =
-        payment.status === "PAID";
+      payment.status =
+        "PAID";
 
-      if (!alreadyPaid) {
+      payment.failureReason =
+        null;
 
-        payment.status =
-          cod
-            ? "PENDING"
-            : "PAID";
-
-        payment.failureReason =
-          null;
-
-        if (!cod) {
-          payment.paidAt =
-            payment.paidAt ||
-            new Date();
-        }
-      }
+      payment.paidAt =
+        payment.paidAt ||
+        new Date();
 
       payment.gatewayResponse =
         webhookData;
 
       await payment.save();
 
-      console.log(
-        "Payment Status:",
-        payment.status
-      );
+      // ======================================
+      // ORDER
+      // ======================================
 
-      // ======================================
-      // UPDATE ORDER
-      // ======================================
+      // IMPORTANT:
+      // Keep ONLINE.
+      // Never set COD here.
 
       order.paymentMethod =
-        cod
-          ? "COD"
-          : "ONLINE";
+        "ONLINE";
 
       order.paymentStatus =
-        cod
-          ? "PENDING"
-          : "PAID";
+        "PAID";
 
       order.orderStatus =
         "CONFIRMED";
 
       await order.save();
 
-      console.log(
-        "Order Payment Status:",
-        order.paymentStatus
-      );
-
-      console.log(
-        "Order Status:",
-        order.orderStatus
-      );
-
       // ======================================
-      // CREATE SHIPROCKET ORDER
+      // CREATE SHIPROCKET
       // ======================================
 
       const shiprocketAlreadyCreated =
@@ -1583,24 +1543,11 @@ const fastrrWebhook = async (
       if (
         !shiprocketAlreadyCreated
       ) {
-
         try {
-
-          const shiprocketPaymentMethod =
-            cod
-              ? "COD"
-              : "ONLINE";
-
-          // IMPORTANT:
-          // This is created AFTER the FastRR
-          // address update and order.save().
-          // Therefore Shiprocket receives
-          // the updated FastRR address.
-
           const shiprocketOrderData =
             buildShiprocketOrderPayload(
               order,
-              shiprocketPaymentMethod
+              "ONLINE"
             );
 
           console.log(
@@ -1608,25 +1555,10 @@ const fastrrWebhook = async (
           );
 
           console.log(
-            "CREATING SHIPROCKET ORDER"
+            "CREATING SHIPROCKET PREPAID ORDER"
           );
 
           console.log(
-            "Our Order ID:",
-            order.orderId
-          );
-
-          console.log(
-            "Shiprocket Address:",
-            JSON.stringify(
-              order.shippingAddress,
-              null,
-              2
-            )
-          );
-
-          console.log(
-            "Shiprocket Payload:",
             JSON.stringify(
               shiprocketOrderData,
               null,
@@ -1642,19 +1574,6 @@ const fastrrWebhook = async (
             await createShiprocketOrder(
               shiprocketOrderData
             );
-
-          console.log(
-            "Shiprocket Response:",
-            JSON.stringify(
-              shiprocketResponse,
-              null,
-              2
-            )
-          );
-
-          // ====================================
-          // SAVE SHIPROCKET IDS
-          // ====================================
 
           order.shiprocket.orderId =
             shiprocketResponse
@@ -1678,14 +1597,9 @@ const fastrrWebhook = async (
 
           await order.save();
 
-          console.log(
-            "Shiprocket order created successfully."
-          );
-
         } catch (
           shiprocketError
         ) {
-
           console.error(
             "Shiprocket order creation failed:",
             shiprocketError
@@ -1719,12 +1633,6 @@ const fastrrWebhook = async (
               shiprocketError.message,
           });
         }
-
-      } else {
-
-        console.log(
-          "Shiprocket order already exists. Skipping duplicate creation."
-        );
       }
 
       // ======================================
@@ -1745,7 +1653,7 @@ const fastrrWebhook = async (
         );
 
       // ======================================
-      // SUCCESS RESPONSE
+      // RESPONSE
       // ======================================
 
       return res.status(200).json({
@@ -1759,6 +1667,9 @@ const fastrrWebhook = async (
 
         paymentId:
           payment._id,
+
+        paymentMethod:
+          order.paymentMethod,
 
         paymentStatus:
           order.paymentStatus,
@@ -1801,11 +1712,6 @@ const fastrrWebhook = async (
         status
       )
     ) {
-
-      console.log(
-        "FastRR FAILURE webhook received"
-      );
-
       payment.status =
         "FAILED";
 
@@ -1853,9 +1759,9 @@ const fastrrWebhook = async (
       webhookData;
 
     if (
-      status === "PROCESSING"
+      status ===
+      "PROCESSING"
     ) {
-
       payment.status =
         "PROCESSING";
 
@@ -1863,7 +1769,6 @@ const fastrrWebhook = async (
         "PROCESSING";
 
     } else {
-
       payment.status =
         "PENDING";
     }
@@ -1888,7 +1793,6 @@ const fastrrWebhook = async (
     });
 
   } catch (error) {
-
     console.error(
       "========================================"
     );
@@ -1915,9 +1819,7 @@ const fastrrWebhook = async (
 };
 
 // =====================================================
-// 5. GET PAYMENT
-//
-// GET /api/payment/:paymentId
+// GET PAYMENT
 // =====================================================
 
 const getPayment = async (
@@ -1925,7 +1827,6 @@ const getPayment = async (
   res
 ) => {
   try {
-
     const userId =
       getUserId(req);
 
@@ -1943,12 +1844,15 @@ const getPayment = async (
 
     const payment =
       await Payment.findOne({
-        _id: paymentId,
-        user: userId,
+        _id:
+          paymentId,
+
+        user:
+          userId,
       })
         .populate(
           "order",
-          "orderId totalAmount paymentStatus orderStatus"
+          "orderId totalAmount paymentStatus orderStatus paymentMethod"
         )
         .lean();
 
@@ -2009,7 +1913,6 @@ const getPayment = async (
     });
 
   } catch (error) {
-
     console.error(
       "GET PAYMENT ERROR:",
       error
@@ -2028,23 +1931,7 @@ const getPayment = async (
 };
 
 // =====================================================
-// 6. GET FASTRR CHECKOUT DETAILS
-//
-// GET /api/payment/checkout-address/:orderId
-//
-// orderId = OUR INTERNAL ORDER ID
-//
-// Example:
-// WMS-1790147574720
-//
-// Internally:
-// WMS-1790147574720
-//       ↓
-// Payment.gatewayOrderId
-//       ↓
-// 6ab37c2aada81805186081c4
-//       ↓
-// FastRR API
+// GET FASTRR CHECKOUT DETAILS
 // =====================================================
 
 const getCheckoutAddress = async (
@@ -2052,17 +1939,12 @@ const getCheckoutAddress = async (
   res
 ) => {
   try {
-
     const userId =
       getUserId(req);
 
     const {
       orderId,
     } = req.params;
-
-    // ========================================
-    // AUTH
-    // ========================================
 
     if (!userId) {
       return res.status(401).json({
@@ -2072,10 +1954,6 @@ const getCheckoutAddress = async (
       });
     }
 
-    // ========================================
-    // VALIDATE
-    // ========================================
-
     if (!orderId) {
       return res.status(400).json({
         success: false,
@@ -2083,10 +1961,6 @@ const getCheckoutAddress = async (
           "Order ID is required",
       });
     }
-
-    // ========================================
-    // FIND OUR ORDER
-    // ========================================
 
     const order =
       await Order.findOne({
@@ -2104,10 +1978,6 @@ const getCheckoutAddress = async (
           "Order not found",
       });
     }
-
-    // ========================================
-    // FIND PAYMENT
-    // ========================================
 
     const payment =
       await Payment.findOne({
@@ -2127,38 +1997,23 @@ const getCheckoutAddress = async (
     }
 
     // ========================================
-    // FASTRR GATEWAY ORDER ID
+    // COD DOES NOT HAVE FASTRR DETAILS
     // ========================================
+
+    if (
+      payment.paymentMethod ===
+      "COD"
+    ) {
+      return res.status(400).json({
+        success: false,
+
+        message:
+          "COD order does not have FastRR checkout details",
+      });
+    }
 
     const gatewayOrderId =
       payment.gatewayOrderId;
-
-    console.log(
-      "========================================"
-    );
-
-    console.log(
-      "GET FASTRR CHECKOUT DETAILS"
-    );
-
-    console.log(
-      "Our Order ID:",
-      order.orderId
-    );
-
-    console.log(
-      "Payment ID:",
-      payment._id
-    );
-
-    console.log(
-      "FastRR Gateway Order ID:",
-      gatewayOrderId
-    );
-
-    console.log(
-      "========================================"
-    );
 
     if (!gatewayOrderId) {
       return res.status(400).json({
@@ -2169,20 +2024,12 @@ const getCheckoutAddress = async (
       });
     }
 
-    // ========================================
-    // FETCH FASTRR DETAILS
-    // ========================================
-
     const checkoutDetails =
       await fetchFastRROrderDetails(
         String(
           gatewayOrderId
         )
       );
-
-    // ========================================
-    // RESPONSE
-    // ========================================
 
     return res.status(200).json({
       success: true,
@@ -2200,7 +2047,6 @@ const getCheckoutAddress = async (
     });
 
   } catch (error) {
-
     console.error(
       "GET CHECKOUT DETAILS ERROR:",
       error.response?.data ||

@@ -1,4 +1,5 @@
 // controllers/orderController.js
+
 const mongoose = require("mongoose");
 
 const Order = require("../models/order");
@@ -9,8 +10,8 @@ const Payment = require("../models/payment");
 const {
   createShiprocketOrder,
 } = require("../services/shiprocketService");
-const whatsappService = require("../services/whatsappService");
 
+const whatsappService = require("../services/whatsappService");
 
 // =====================================================
 // CREATE / PLACE ORDER
@@ -18,13 +19,20 @@ const whatsappService = require("../services/whatsappService");
 
 const createOrder = async (req, res) => {
   try {
-
     const {
       items,
-      paymentMethod,
       shippingAddress,
     } = req.body;
 
+    // =================================================
+    // NORMALIZE PAYMENT METHOD
+    // =================================================
+
+    const paymentMethod = String(
+      req.body.paymentMethod || ""
+    )
+      .trim()
+      .toUpperCase();
 
     // =================================================
     // AUTHENTICATION
@@ -48,7 +56,6 @@ const createOrder = async (req, res) => {
       });
     }
 
-
     // =================================================
     // VALIDATE ITEMS
     // =================================================
@@ -61,7 +68,6 @@ const createOrder = async (req, res) => {
       });
     }
 
-
     // =================================================
     // VALIDATE PAYMENT METHOD
     // =================================================
@@ -69,10 +75,23 @@ const createOrder = async (req, res) => {
     if (!["ONLINE", "COD"].includes(paymentMethod)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid payment method",
+        message:
+          "Invalid payment method. Use ONLINE or COD.",
       });
     }
 
+    console.log(
+      "========================================"
+    );
+
+    console.log(
+      "CREATE ORDER PAYMENT METHOD:",
+      paymentMethod
+    );
+
+    console.log(
+      "========================================"
+    );
 
     // =================================================
     // VALIDATE SHIPPING ADDRESS
@@ -86,7 +105,6 @@ const createOrder = async (req, res) => {
       });
     }
 
-
     const requiredAddressFields = [
       "name",
       "phone",
@@ -96,21 +114,15 @@ const createOrder = async (req, res) => {
       "pincode",
     ];
 
-
     for (const field of requiredAddressFields) {
-
       if (!shippingAddress[field]) {
-
         return res.status(400).json({
           success: false,
           message:
             `${field} is required in shipping address`,
         });
-
       }
-
     }
-
 
     // =================================================
     // PREPARE ORDER ITEMS
@@ -120,30 +132,46 @@ const createOrder = async (req, res) => {
 
     let totalAmount = 0;
 
-
     for (const item of items) {
+      console.log(
+        "========== ORDER ITEM DEBUG =========="
+      );
+
+      console.log(
+        "Received item:",
+        JSON.stringify(item, null, 2)
+      );
+
+      console.log(
+        "Product ID:",
+        item.product
+      );
+
+      console.log(
+        "Variant ID:",
+        item.variantId
+      );
+
+      console.log(
+        "Quantity:",
+        item.quantity
+      );
+
+      console.log(
+        "======================================"
+      );
 
       // -----------------------------------------------
       // PRODUCT ID
       // -----------------------------------------------
 
-      console.log("========== ORDER ITEM DEBUG ==========");
-      console.log("Received item:", JSON.stringify(item, null, 2));
-      console.log("Product ID:", item.product);
-      console.log("Variant ID:", item.variantId);
-      console.log("Quantity:", item.quantity);
-      console.log("======================================");
-
       if (!item.product) {
-
         return res.status(400).json({
           success: false,
           message:
             "Product ID is required",
         });
-
       }
-
 
       // -----------------------------------------------
       // QUANTITY
@@ -152,17 +180,13 @@ const createOrder = async (req, res) => {
       const quantity =
         Number(item.quantity);
 
-
       if (!quantity || quantity < 1) {
-
         return res.status(400).json({
           success: false,
           message:
             "Product quantity must be at least 1",
         });
-
       }
-
 
       // -----------------------------------------------
       // GET PRODUCT
@@ -173,15 +197,26 @@ const createOrder = async (req, res) => {
           item.product
         );
 
-      console.log("========== VARIANT DEBUG ==========");
+      if (!product) {
+        return res.status(404).json({
+          success: false,
+          message:
+            `Product not found: ${item.product}`,
+        });
+      }
+
+      console.log(
+        "========== VARIANT DEBUG =========="
+      );
+
       console.log(
         "Product variants:",
-        product.variants.map(v => ({
+        product.variants.map((v) => ({
           id: String(v._id),
           title: v.title,
           salePrice: v.salePrice,
           sku: v.sku,
-          stock: v.stock
+          stock: v.stock,
         }))
       );
 
@@ -189,23 +224,10 @@ const createOrder = async (req, res) => {
         "Requested variantId:",
         item.variantId
       );
-      console.log("===================================");
 
-
-      if (!product) {
-
-        return res.status(404).json({
-          success: false,
-          message:
-            `Product not found: ${item.product}`,
-        });
-
-      }
-
-
-      // -----------------------------------------------
-      // ACTUAL PRODUCT PRICE
-      // -----------------------------------------------
+      console.log(
+        "==================================="
+      );
 
       // -----------------------------------------------
       // VARIANT
@@ -214,19 +236,27 @@ const createOrder = async (req, res) => {
       let variant = null;
 
       if (item.variantId) {
-        variant = product.variants.id(item.variantId);
+        variant =
+          product.variants.id(
+            item.variantId
+          );
 
         if (!variant) {
           return res.status(400).json({
             success: false,
-            message: `Variant not found for ${item.variantId}`,
+            message:
+              `Variant not found for ${item.variantId}`,
           });
         }
 
-        if (variant.stock < quantity) {
+        if (
+          Number(variant.stock) <
+          quantity
+        ) {
           return res.status(400).json({
             success: false,
-            message: `Insufficient stock for ${product.name} - ${variant.title}`,
+            message:
+              `Insufficient stock for ${product.name} - ${variant.title}`,
           });
         }
       }
@@ -240,29 +270,15 @@ const createOrder = async (req, res) => {
         : Number(product.salePrice);
 
       if (
-        Number.isNaN(price) ||
+        !Number.isFinite(price) ||
         price < 0
       ) {
-        return res.status(400).json({
-          success: false,
-          message: `Invalid price for ${product.name}`,
-        });
-      }
-
-
-      if (
-        Number.isNaN(price) ||
-        price < 0
-      ) {
-
         return res.status(400).json({
           success: false,
           message:
             `Invalid price for ${product.name}`,
         });
-
       }
-
 
       // -----------------------------------------------
       // ITEM TOTAL
@@ -271,31 +287,30 @@ const createOrder = async (req, res) => {
       const itemTotal =
         price * quantity;
 
-
       totalAmount += itemTotal;
-
 
       // -----------------------------------------------
       // ADD ORDER ITEM
       // -----------------------------------------------
 
       orderItems.push({
-
         product:
           product._id,
 
-        variantId: variant
-          ? variant._id
-          : null,
+        variantId:
+          variant
+            ? variant._id
+            : null,
 
-        name: variant
-          ? `${product.name} - ${variant.title}`
-          : product.name,
+        name:
+          variant
+            ? `${product.name} - ${variant.title}`
+            : product.name,
 
-        sku: variant
-          ? variant.sku
-          : product._id.toString(),
-
+        sku:
+          variant
+            ? variant.sku
+            : product._id.toString(),
 
         quantity,
 
@@ -303,11 +318,8 @@ const createOrder = async (req, res) => {
 
         total:
           itemTotal,
-
       });
-
     }
-
 
     // =================================================
     // GENERATE ORDER ID
@@ -316,16 +328,14 @@ const createOrder = async (req, res) => {
     const orderId =
       `WMS-${Date.now()}`;
 
-
     // =================================================
     // CREATE ORDER
     // =================================================
 
     const order =
       await Order.create({
-
         user:
-          req.user.userId,
+          userId,
 
         orderId,
 
@@ -334,6 +344,9 @@ const createOrder = async (req, res) => {
 
         totalAmount,
 
+        // IMPORTANT
+        // This will now always be the normalized
+        // value: COD OR ONLINE
         paymentMethod,
 
         paymentStatus:
@@ -343,7 +356,6 @@ const createOrder = async (req, res) => {
           "PENDING",
 
         shippingAddress: {
-
           name:
             shippingAddress.name,
 
@@ -358,6 +370,10 @@ const createOrder = async (req, res) => {
           address:
             shippingAddress.address,
 
+          address2:
+            shippingAddress.address2 ||
+            "",
+
           city:
             shippingAddress.city,
 
@@ -370,15 +386,9 @@ const createOrder = async (req, res) => {
           country:
             shippingAddress.country ||
             "India",
-
         },
 
-        // -------------------------------------------
-        // SHIPROCKET INFORMATION
-        // -------------------------------------------
-
         shiprocket: {
-
           orderId: null,
 
           shipmentId: null,
@@ -396,11 +406,8 @@ const createOrder = async (req, res) => {
           pickupScheduled: false,
 
           pickupDate: null,
-
         },
-
       });
-
 
     // =================================================
     // CREATE PAYMENT DOCUMENT
@@ -408,7 +415,6 @@ const createOrder = async (req, res) => {
 
     const payment =
       await Payment.create({
-
         order:
           order._id,
 
@@ -416,12 +422,16 @@ const createOrder = async (req, res) => {
           order.orderId,
 
         user:
-          req.user.userId,
+          userId,
 
         amount:
           totalAmount,
 
-        paymentMethod,
+        currency:
+          "INR",
+
+        paymentMethod:
+          paymentMethod,
 
         gateway:
           paymentMethod === "ONLINE"
@@ -430,46 +440,65 @@ const createOrder = async (req, res) => {
 
         status:
           "PENDING",
-
       });
 
-
     // =================================================
-    // SAVE PAYMENT REFERENCE IN ORDER
+    // SAVE PAYMENT REFERENCE
     // =================================================
 
     order.paymentId =
       payment._id;
 
-
     await order.save();
 
+    console.log(
+      "========================================"
+    );
+
+    console.log(
+      "ORDER CREATED"
+    );
+
+    console.log(
+      "Order ID:",
+      order.orderId
+    );
+
+    console.log(
+      "Payment Method:",
+      order.paymentMethod
+    );
+
+    console.log(
+      "Payment Status:",
+      order.paymentStatus
+    );
+
+    console.log(
+      "Payment Gateway:",
+      payment.gateway
+    );
+
+    console.log(
+      "Payment Method:",
+      payment.paymentMethod
+    );
+
+    console.log(
+      "========================================"
+    );
 
     // =================================================
     // COD FLOW
-    // =================================================
-    //
-    // COD does NOT require online payment.
-    //
-    // Therefore we can directly create the
-    // Shiprocket order.
-    //
     // =================================================
 
     if (
       paymentMethod === "COD"
     ) {
-
       try {
-
-        // ---------------------------------------------
-        // PREPARE SHIPROCKET ITEMS
-        // ---------------------------------------------
-
         const shiprocketItems =
           order.items.map(
             (item) => ({
-
               name:
                 item.name,
 
@@ -478,26 +507,21 @@ const createOrder = async (req, res) => {
                 item.product.toString(),
 
               units:
-                item.quantity,
+                Number(item.quantity),
 
               selling_price:
-                item.price,
-
+                Number(item.price),
             })
           );
 
-
-        // ---------------------------------------------
-        // SHIPROCKET PAYLOAD
-        // ---------------------------------------------
-
         const shiprocketOrderData = {
-
           order_id:
             order.orderId,
 
           order_date:
-            order.createdAt.toISOString(),
+            order.createdAt
+              ? order.createdAt.toISOString()
+              : new Date().toISOString(),
 
           pickup_location:
             process.env
@@ -505,7 +529,6 @@ const createOrder = async (req, res) => {
 
           comment:
             "We Make Sweets Order",
-
 
           // ==========================================
           // BILLING
@@ -539,12 +562,11 @@ const createOrder = async (req, res) => {
 
           billing_email:
             shippingAddress.email ||
-            req.user.email ||
+            user.email ||
             "",
 
           billing_phone:
             shippingAddress.phone,
-
 
           // ==========================================
           // SHIPPING
@@ -580,12 +602,12 @@ const createOrder = async (req, res) => {
             "India",
 
           shipping_email:
-            shippingAddress.email || user.email ||
+            shippingAddress.email ||
+            user.email ||
             "",
 
           shipping_phone:
             shippingAddress.phone,
-
 
           // ==========================================
           // PRODUCTS
@@ -594,14 +616,12 @@ const createOrder = async (req, res) => {
           order_items:
             shiprocketItems,
 
-
           // ==========================================
           // PAYMENT
           // ==========================================
 
           payment_method:
             "COD",
-
 
           // ==========================================
           // CHARGES
@@ -620,8 +640,7 @@ const createOrder = async (req, res) => {
             0,
 
           sub_total:
-            totalAmount,
-
+            Number(totalAmount),
 
           // ==========================================
           // PACKAGE
@@ -650,78 +669,102 @@ const createOrder = async (req, res) => {
               process.env
                 .SHIPROCKET_PACKAGE_WEIGHT
             ) || 0.5,
-
         };
 
+        console.log(
+          "========================================"
+        );
 
-        // ---------------------------------------------
-        // CREATE SHIPROCKET ORDER
-        // ---------------------------------------------
+        console.log(
+          "CREATING SHIPROCKET COD ORDER"
+        );
+
+        console.log(
+          JSON.stringify(
+            shiprocketOrderData,
+            null,
+            2
+          )
+        );
+
+        console.log(
+          "========================================"
+        );
 
         const shiprocketResponse =
           await createShiprocketOrder(
             shiprocketOrderData
           );
 
-
         console.log(
           "Shiprocket COD Order Response:",
           shiprocketResponse
         );
 
-
-        // ---------------------------------------------
+        // ==========================================
         // SAVE SHIPROCKET DETAILS
-        // ---------------------------------------------
+        // ==========================================
 
         order.shiprocket.orderId =
-          shiprocketResponse.order_id ||
+          shiprocketResponse?.order_id ||
           null;
 
         order.shiprocket.shipmentId =
-          shiprocketResponse.shipment_id ||
+          shiprocketResponse?.shipment_id ||
           null;
 
         order.shiprocket.status =
           "ORDER_CREATED";
 
-
-        // ---------------------------------------------
-        // COD ORDER IS CONFIRMED
-        // ---------------------------------------------
+        // ==========================================
+        // COD ORDER CONFIRMED
+        // ==========================================
 
         order.orderStatus =
           "CONFIRMED";
 
+        // Payment remains PENDING
+        // because COD is not paid yet.
+
+        order.paymentStatus =
+          "PENDING";
+
+        payment.status =
+          "PENDING";
+
+        await payment.save();
 
         await order.save();
 
-        // Trigger WhatsApp Status Notification
+        // ==========================================
+        // WHATSAPP
+        // ==========================================
+
         whatsappService
-          .sendOrderStatusNotification(order, "CONFIRMED")
-          .catch((waErr) =>
-            console.error("WhatsApp COD confirmation notification error:", waErr.message)
+          .sendOrderStatusNotification(
+            order,
+            "CONFIRMED"
+          )
+          .catch(
+            (waErr) =>
+              console.error(
+                "WhatsApp COD confirmation notification error:",
+                waErr.message
+              )
           );
 
-
-      } catch (shiprocketError) {
-
+      } catch (
+        shiprocketError
+      ) {
         console.error(
           "Shiprocket COD Order Creation Failed:",
-          shiprocketError.response?.data ||
+          shiprocketError
+            ?.response
+            ?.data ||
           shiprocketError.message
         );
 
-
-        // ---------------------------------------------
-        // IMPORTANT
-        // ---------------------------------------------
-        // Order remains in MongoDB.
-        // Admin can retry Shiprocket creation.
-        // ---------------------------------------------
-
         return res.status(500).json({
-
           success: false,
 
           message:
@@ -733,42 +776,35 @@ const createOrder = async (req, res) => {
           paymentId:
             payment._id,
 
+          paymentMethod:
+            order.paymentMethod,
+
+          paymentStatus:
+            order.paymentStatus,
+
           error:
-            shiprocketError.response?.data ||
+            shiprocketError
+              ?.response
+              ?.data ||
             shiprocketError.message,
-
         });
-
       }
-
     }
-
 
     // =================================================
     // ONLINE PAYMENT FLOW
-    // =================================================
-    //
-    // IMPORTANT:
-    //
-    // DO NOT create Shiprocket order here.
-    //
-    // Customer must first complete fastrr payment.
-    //
     // =================================================
 
     if (
       paymentMethod === "ONLINE"
     ) {
-
       return res.status(201).json({
-
         success: true,
 
         message:
           "Order created. Proceed to online payment.",
 
         order: {
-
           id:
             order._id,
 
@@ -792,11 +828,9 @@ const createOrder = async (req, res) => {
 
           shippingAddress:
             order.shippingAddress,
-
         },
 
         payment: {
-
           paymentId:
             payment._id,
 
@@ -806,36 +840,29 @@ const createOrder = async (req, res) => {
           gateway:
             payment.gateway,
 
+          paymentMethod:
+            payment.paymentMethod,
+
           status:
             payment.status,
-
         },
-
-        // ---------------------------------------------
-        // FRONTEND WILL USE THIS TO START FASTRR
-        // ---------------------------------------------
 
         paymentRequired:
           true,
-
       });
-
     }
-
 
     // =================================================
     // COD SUCCESS RESPONSE
     // =================================================
 
     return res.status(201).json({
-
       success: true,
 
       message:
         "COD order placed successfully",
 
       order: {
-
         id:
           order._id,
 
@@ -865,11 +892,9 @@ const createOrder = async (req, res) => {
 
         createdAt:
           order.createdAt,
-
       },
 
       payment: {
-
         paymentId:
           payment._id,
 
@@ -879,24 +904,21 @@ const createOrder = async (req, res) => {
         gateway:
           payment.gateway,
 
+        paymentMethod:
+          payment.paymentMethod,
+
         status:
           payment.status,
-
       },
-
     });
 
-
   } catch (error) {
-
     console.error(
       "Create Order Error:",
       error
     );
 
-
     return res.status(500).json({
-
       success: false,
 
       message:
@@ -904,13 +926,9 @@ const createOrder = async (req, res) => {
 
       error:
         error.message,
-
     });
-
   }
-
 };
-
 
 // =====================================================
 // GET MY ORDERS
@@ -918,17 +936,18 @@ const createOrder = async (req, res) => {
 
 const getMyOrders = async (req, res) => {
   try {
-    const orders = await Order.find({
-      user: req.userId,
-    })
-      .populate(
-        "items.product",
-        "name price images sku"
-      )
-      .populate("paymentId")
-      .sort({
-        createdAt: -1,
-      });
+    const orders =
+      await Order.find({
+        user: req.userId,
+      })
+        .populate(
+          "items.product",
+          "name price images sku"
+        )
+        .populate("paymentId")
+        .sort({
+          createdAt: -1,
+        });
 
     return res.status(200).json({
       success: true,
@@ -943,11 +962,11 @@ const getMyOrders = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Unable to fetch orders",
+      message:
+        "Unable to fetch orders",
     });
   }
 };
-
 
 // =====================================================
 // GET SINGLE ORDER
@@ -958,7 +977,7 @@ const getOrderById = async (req, res) => {
     const { id } = req.params;
 
     const query = {
-      user: req.userId,
+      user: req.user.userId,
     };
 
     if (mongoose.isValidObjectId(id)) {
@@ -967,17 +986,19 @@ const getOrderById = async (req, res) => {
       query.orderId = id;
     }
 
-    const order = await Order.findOne(query)
-      .populate(
-        "items.product",
-        "name price images sku"
-      )
-      .populate("paymentId");
+    const order =
+      await Order.findOne(query)
+        .populate(
+          "items.product",
+          "name price images sku"
+        )
+        .populate("paymentId");
 
     if (!order) {
       return res.status(404).json({
         success: false,
-        message: "Order not found",
+        message:
+          "Order not found",
       });
     }
 
@@ -985,6 +1006,7 @@ const getOrderById = async (req, res) => {
       success: true,
       order,
     });
+
   } catch (error) {
     console.error(
       "Get Order Error:",
@@ -993,312 +1015,213 @@ const getOrderById = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Unable to fetch order",
+      message:
+        "Unable to fetch order",
     });
   }
 };
-
 
 // =====================================================
 // CANCEL ORDER
 // =====================================================
 
 const cancelOrder = async (req, res) => {
-
   try {
-
     const order =
       await Order.findOne({
-
         _id:
           req.params.id,
 
         user:
           req.user.userId,
-
       });
-
 
     if (!order) {
-
       return res.status(404).json({
-
         success: false,
-
         message:
           "Order not found",
-
       });
-
     }
 
-
     const nonCancellableStatuses = [
-
       "SHIPPED",
-
       "DELIVERED",
-
       "CANCELLED",
-
     ];
-
 
     if (
       nonCancellableStatuses.includes(
         order.orderStatus
       )
     ) {
-
       return res.status(400).json({
-
         success: false,
-
         message:
           "This order cannot be cancelled",
-
       });
-
     }
-
 
     order.orderStatus =
       "CANCELLED";
 
-
     await order.save();
 
-
     return res.status(200).json({
-
       success: true,
-
       message:
         "Order cancelled successfully",
-
       order,
-
     });
 
-
   } catch (error) {
-
     console.error(
       "Cancel Order Error:",
       error
     );
 
-
     return res.status(500).json({
-
       success: false,
-
       message:
         "Unable to cancel order",
-
     });
-
   }
-
 };
-
 
 // =====================================================
 // ADMIN - GET ALL ORDERS
 // =====================================================
 
 const getAllOrders = async (req, res) => {
-
   try {
-
     const orders =
       await Order.find()
-
         .populate(
           "user",
           "name email phone"
         )
-
         .populate(
           "items.product",
           "name price images sku"
         )
-
-        .populate(
-          "paymentId"
-        )
-
+        .populate("paymentId")
         .sort({
           createdAt: -1,
         });
 
-
     return res.status(200).json({
-
       success: true,
-
       count:
         orders.length,
-
       orders,
-
     });
 
-
   } catch (error) {
-
     console.error(
       "Get All Orders Error:",
       error
     );
 
-
     return res.status(500).json({
-
       success: false,
-
       message:
         "Unable to fetch orders",
-
     });
-
   }
-
 };
-
 
 // =====================================================
 // ADMIN - UPDATE ORDER STATUS
 // =====================================================
 
 const updateOrderStatus = async (req, res) => {
-
   try {
-
     const {
-      orderStatus
+      orderStatus,
     } = req.body;
 
-
     const allowedStatuses = [
-
       "PENDING",
-
       "CONFIRMED",
-
       "PROCESSING",
-
       "SHIPPED",
-
       "DELIVERED",
-
       "CANCELLED",
-
     ];
-
 
     if (
       !allowedStatuses.includes(
         orderStatus
       )
     ) {
-
       return res.status(400).json({
-
         success: false,
-
         message:
           "Invalid order status",
-
       });
-
     }
-
 
     const order =
       await Order.findById(
         req.params.id
       );
 
-
     if (!order) {
-
       return res.status(404).json({
-
         success: false,
-
         message:
           "Order not found",
-
       });
-
     }
-
 
     order.orderStatus =
       orderStatus;
 
-
     await order.save();
 
-    // Trigger WhatsApp Status Notification
     whatsappService
-      .sendOrderStatusNotification(order, orderStatus)
-      .catch((waErr) =>
-        console.error("WhatsApp status update notification error:", waErr.message)
+      .sendOrderStatusNotification(
+        order,
+        orderStatus
+      )
+      .catch(
+        (waErr) =>
+          console.error(
+            "WhatsApp status update notification error:",
+            waErr.message
+          )
       );
 
-
     return res.status(200).json({
-
       success: true,
-
       message:
         "Order status updated successfully",
-
       order,
-
     });
 
-
   } catch (error) {
-
     console.error(
       "Update Order Status Error:",
       error
     );
 
-
     return res.status(500).json({
-
       success: false,
-
       message:
         "Unable to update order status",
-
     });
-
   }
-
 };
-
 
 // =====================================================
 // EXPORT
 // =====================================================
 
 module.exports = {
-
   createOrder,
-
   getMyOrders,
-
   getOrderById,
-
   cancelOrder,
-
   getAllOrders,
-
   updateOrderStatus,
-
 };
