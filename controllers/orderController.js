@@ -22,10 +22,10 @@ const createOrder = async (req, res) => {
       shippingAddress,
     } = req.body;
 
-    console.log("========== CREATE ORDER ==========");
-    console.log("Received paymentMethod:", paymentMethod);
-    console.log("Received body:", JSON.stringify(req.body, null, 2));
-    console.log("=================================");
+    // console.log("========== CREATE ORDER ==========");
+    // console.log("Received paymentMethod:", paymentMethod);
+    // console.log("Received body:", JSON.stringify(req.body, null, 2));
+    // console.log("=================================");
 
     // =================================================
     // NORMALIZE PAYMENT METHOD
