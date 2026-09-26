@@ -1,5 +1,3 @@
-// controllers/orderController.js
-
 const mongoose = require("mongoose");
 
 const Order = require("../models/order");
@@ -23,6 +21,11 @@ const createOrder = async (req, res) => {
       items,
       shippingAddress,
     } = req.body;
+
+    console.log("========== CREATE ORDER ==========");
+    console.log("Received paymentMethod:", paymentMethod);
+    console.log("Received body:", JSON.stringify(req.body, null, 2));
+    console.log("=================================");
 
     // =================================================
     // NORMALIZE PAYMENT METHOD
@@ -754,7 +757,7 @@ const createOrder = async (req, res) => {
           );
 
       } catch (
-        shiprocketError
+      shiprocketError
       ) {
         console.error(
           "Shiprocket COD Order Creation Failed:",
