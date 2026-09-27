@@ -11,6 +11,7 @@ const orderItemSchema = new mongoose.Schema(
       ref: "Product",
       required: true,
     },
+
     variantId: {
       type: mongoose.Schema.Types.ObjectId,
       default: null,
@@ -50,7 +51,6 @@ const orderItemSchema = new mongoose.Schema(
     _id: false,
   }
 );
-
 
 // =====================================================
 // SHIPPING ADDRESS SCHEMA
@@ -117,56 +117,47 @@ const shippingAddressSchema = new mongoose.Schema(
   }
 );
 
-
 // =====================================================
 // SHIPROCKET SCHEMA
 // =====================================================
 
 const shiprocketSchema = new mongoose.Schema(
   {
-    // Shiprocket order ID
     orderId: {
       type: String,
       default: null,
     },
 
-    // Shiprocket shipment ID
     shipmentId: {
       type: String,
       default: null,
     },
 
-    // AWB number
     awbCode: {
       type: String,
       default: null,
     },
 
-    // Courier name
     courierName: {
       type: String,
       default: null,
     },
 
-    // Courier ID
     courierId: {
       type: String,
       default: null,
     },
 
-    // Shiprocket shipment status
     status: {
       type: String,
       default: null,
     },
 
-    // Tracking URL
     trackingUrl: {
       type: String,
       default: null,
     },
 
-    // Pickup information
     pickupScheduled: {
       type: Boolean,
       default: false,
@@ -176,7 +167,7 @@ const shiprocketSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
-    // ADD THESE
+
     rtoStatus: {
       type: String,
       default: null,
@@ -191,6 +182,7 @@ const shiprocketSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+
     createdAt: {
       type: Date,
       default: null,
@@ -205,7 +197,6 @@ const shiprocketSchema = new mongoose.Schema(
     _id: false,
   }
 );
-
 
 // =====================================================
 // MAIN ORDER SCHEMA
@@ -223,7 +214,6 @@ const orderSchema = new mongoose.Schema(
       required: true,
     },
 
-
     // =================================================
     // ORDER ID
     // =================================================
@@ -235,7 +225,6 @@ const orderSchema = new mongoose.Schema(
       index: true,
     },
 
-
     // =================================================
     // ORDER ITEMS
     // =================================================
@@ -243,15 +232,16 @@ const orderSchema = new mongoose.Schema(
     items: {
       type: [orderItemSchema],
       required: true,
+
       validate: {
         validator: function (items) {
           return items.length > 0;
         },
+
         message:
           "Order must contain at least one item",
       },
     },
-
 
     // =================================================
     // TOTAL AMOUNT
@@ -263,17 +253,20 @@ const orderSchema = new mongoose.Schema(
       min: 0,
     },
 
-
     // =================================================
     // PAYMENT METHOD
     // =================================================
 
     paymentMethod: {
       type: String,
-      enum: ["ONLINE", "COD"],
+
+      enum: [
+        "ONLINE",
+        "COD",
+      ],
+
       required: true,
     },
-
 
     // =================================================
     // PAYMENT STATUS
@@ -281,6 +274,7 @@ const orderSchema = new mongoose.Schema(
 
     paymentStatus: {
       type: String,
+
       enum: [
         "PENDING",
         "PROCESSING",
@@ -288,9 +282,9 @@ const orderSchema = new mongoose.Schema(
         "FAILED",
         "REFUNDED",
       ],
+
       default: "PENDING",
     },
-
 
     // =================================================
     // PAYMENT REFERENCE
@@ -298,10 +292,11 @@ const orderSchema = new mongoose.Schema(
 
     paymentId: {
       type: mongoose.Schema.Types.ObjectId,
+
       ref: "Payment",
+
       default: null,
     },
-
 
     // =================================================
     // ORDER STATUS
@@ -309,6 +304,7 @@ const orderSchema = new mongoose.Schema(
 
     orderStatus: {
       type: String,
+
       enum: [
         "PENDING",
         "CONFIRMED",
@@ -319,29 +315,45 @@ const orderSchema = new mongoose.Schema(
         "DELIVERED",
         "CANCELLED",
       ],
+
       default: "PENDING",
     },
-
 
     // =================================================
     // SHIPPING ADDRESS
     // =================================================
+    //
+    // IMPORTANT:
+    // Address FastRR Checkout se aayega.
+    // Webhook ke baad ye field populate hogi.
+    //
+    // =================================================
 
     shippingAddress: {
       type: shippingAddressSchema,
-      required: true,
+
+      required: false,
+
+      default: null,
     },
+
+    // =================================================
+    // CANCELLATION
+    // =================================================
+
     cancellationReason: {
       type: String,
+
       default: null,
+
       trim: true,
     },
 
     cancelledAt: {
       type: Date,
+
       default: null,
     },
-
 
     // =================================================
     // SHIPROCKET INFORMATION
@@ -349,14 +361,15 @@ const orderSchema = new mongoose.Schema(
 
     shiprocket: {
       type: shiprocketSchema,
+
       default: () => ({}),
     },
   },
+
   {
     timestamps: true,
   }
 );
-
 
 // =====================================================
 // PREVENT OVERWRITE MODEL ERROR
@@ -364,4 +377,7 @@ const orderSchema = new mongoose.Schema(
 
 module.exports =
   mongoose.models.Order ||
-  mongoose.model("Order", orderSchema);
+  mongoose.model(
+    "Order",
+    orderSchema
+  );
