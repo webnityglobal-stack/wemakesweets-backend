@@ -82,6 +82,12 @@ const shippingAddressSchema = new mongoose.Schema(
       trim: true,
     },
 
+    address2: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
     city: {
       type: String,
       required: true,
@@ -182,6 +188,15 @@ const shiprocketSchema = new mongoose.Schema(
     },
 
     rtoDate: {
+      type: Date,
+      default: null,
+    },
+    createdAt: {
+      type: Date,
+      default: null,
+    },
+
+    updatedAt: {
       type: Date,
       default: null,
     },

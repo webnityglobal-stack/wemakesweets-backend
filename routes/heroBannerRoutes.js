@@ -1,4 +1,5 @@
 const express = require("express");
+const adminMiddleware = require("../middleware/adminMiddleware");
 
 const {
   uploadHeroImage:uploadHeroImageController,
@@ -32,6 +33,7 @@ router.get(
 router.post(
   "/upload",
   authMiddleware,
+  adminMiddleware,
     uploadHeroImageMiddleware.single("image"),
   uploadHeroImageController
 );
@@ -40,6 +42,7 @@ router.post(
 router.delete(
   "/:slot",
   authMiddleware,
+  adminMiddleware,
   deleteHeroImage
 );
 

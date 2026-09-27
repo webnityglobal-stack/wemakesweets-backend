@@ -2,6 +2,12 @@ const mongoose = require("mongoose");
 
 const collectionSchema = new mongoose.Schema(
   {
+    shiprocketId: {
+      type: Number,
+      required: true,
+      unique: true,
+      index: true,
+    },
     name: {
       type: String,
       required: true,
