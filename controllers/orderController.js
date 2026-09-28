@@ -505,6 +505,25 @@ const getMyOrders = async (
           createdAt: -1,
         });
 
+    // Auto-sync active orders with Shiprocket (if cancelled or updated on Shiprocket)
+    const activeOrders = orders.filter(
+      (o) =>
+        o.orderStatus !== "CANCELLED" &&
+        o.orderStatus !== "DELIVERED" &&
+        (o.shiprocket?.shipmentId || o.shiprocket?.orderId)
+    );
+
+    if (activeOrders.length > 0) {
+      try {
+        const { syncOrderShiprocketStatus } = require("./shiprocketController");
+        await Promise.allSettled(
+          activeOrders.map((o) => syncOrderShiprocketStatus(o))
+        );
+      } catch (syncErr) {
+        console.warn("Could not auto-sync Shiprocket in getMyOrders:", syncErr.message);
+      }
+    }
+
     return res.status(200).json({
       success: true,
 
@@ -611,6 +630,20 @@ const getOrderById = async (
         }
       } catch (syncErr) {
         console.warn("Could not auto-sync FastRR in getOrderById:", syncErr.message);
+      }
+    }
+
+    // Auto-sync with Shiprocket if order is not delivered and not cancelled
+    if (
+      order.orderStatus !== "CANCELLED" &&
+      order.orderStatus !== "DELIVERED" &&
+      (order.shiprocket?.shipmentId || order.shiprocket?.orderId)
+    ) {
+      try {
+        const { syncOrderShiprocketStatus } = require("./shiprocketController");
+        await syncOrderShiprocketStatus(order);
+      } catch (srSyncErr) {
+        console.warn("Could not auto-sync Shiprocket in getOrderById:", srSyncErr.message);
       }
     }
 

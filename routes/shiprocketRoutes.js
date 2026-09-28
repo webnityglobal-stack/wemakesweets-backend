@@ -6,11 +6,16 @@ const {
   pickupShipment,
   getShipmentTracking,
   cancelShipment,
+  handleShiprocketWebhook,
 } = require("../controllers/shiprocketController");
 
 const authMiddleware = require("../middleware/authMiddleware");
 
 const router = express.Router();
+
+// Shiprocket Webhook (Tracking updates & status changes)
+router.post("/webhook", handleShiprocketWebhook);
+
 
 
 // Create Shiprocket shipment

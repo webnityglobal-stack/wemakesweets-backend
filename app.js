@@ -24,7 +24,8 @@ app.use(
       "https://we-make-sweets-admin.vercel.app",
       "https://darkslategray-horse-285328.hostingersite.com",
       "https://salmon-coyote-671066.hostingersite.com",
-      "https://wemakesweets.com"
+      "https://wemakesweets.com",
+      "https://www.wemakesweets.com"
     ],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],

@@ -305,5 +305,11 @@ module.exports = {
   generateAWB,
   generatePickup,
   trackByAWB,
-  trackByShipment
+  trackByShipment,
+  getShiprocketOrderDetails: async (shiprocketOrderId) => {
+    return await shiprocketRequest(
+      "GET",
+      `/orders/show/${shiprocketOrderId}`
+    );
+  },
 };

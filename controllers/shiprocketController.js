@@ -6,7 +6,122 @@ const {
   generateAWB,
   trackByShipment,
   cancelShiprocketOrder,
+  getShiprocketOrderDetails,
 } = require("../services/shiprocketService");
+
+// ==================================================
+// HELPER: SYNC SHIPROCKET STATUS FOR AN ORDER
+// ==================================================
+const syncOrderShiprocketStatus = async (order, trackingRes = null) => {
+  if (!order || !order.shiprocket) return order;
+
+  let response = trackingRes;
+  let statusUpdated = false;
+
+  try {
+    // 1. If tracking response not provided, fetch tracking if shipmentId exists
+    if (!response && order.shiprocket.shipmentId) {
+      try {
+        response = await trackByShipment(order.shiprocket.shipmentId);
+      } catch (trackErr) {
+        console.warn(`[Shiprocket Sync] Tracking fetch failed for shipment ${order.shiprocket.shipmentId}:`, trackErr.message);
+      }
+    }
+
+    const trackingData =
+      response?.[order.shiprocket.shipmentId]?.tracking_data ||
+      response?.tracking_data ||
+      (response && typeof response === "object" ? Object.values(response)[0]?.tracking_data : null) ||
+      null;
+
+    const trackingError = typeof trackingData?.error === "string" ? trackingData.error : "";
+    const currentStatus = (trackingData?.shipment_track?.[0]?.current_status || "").toUpperCase();
+    const shipmentStatus = Number(trackingData?.shipment_status || 0);
+
+    // Check cancellation signals from tracking
+    const isCancelledFromTracking =
+      shipmentStatus === 8 ||
+      /cancel/i.test(trackingError) ||
+      /cancel/i.test(currentStatus);
+
+    if (isCancelledFromTracking) {
+      if (order.orderStatus !== "CANCELLED" || order.shiprocket.status !== "CANCELLED") {
+        order.orderStatus = "CANCELLED";
+        order.shiprocket.status = "CANCELLED";
+        if (!order.cancelledAt) order.cancelledAt = new Date();
+        if (!order.cancellationReason) {
+          order.cancellationReason = trackingError || "Order cancelled via Shiprocket";
+        }
+        statusUpdated = true;
+      }
+    } else if (order.shiprocket.orderId && order.orderStatus !== "CANCELLED" && order.orderStatus !== "DELIVERED") {
+      // 2. Also verify order status via Shiprocket orders/show API
+      try {
+        const orderDetails = await getShiprocketOrderDetails(order.shiprocket.orderId);
+        const srStatus = (orderDetails?.data?.status || orderDetails?.status || "").toUpperCase();
+        if (srStatus === "CANCELED" || srStatus === "CANCELLED") {
+          order.orderStatus = "CANCELLED";
+          order.shiprocket.status = "CANCELLED";
+          if (!order.cancelledAt) order.cancelledAt = new Date();
+          if (!order.cancellationReason) {
+            order.cancellationReason = "Order cancelled via Shiprocket Dashboard";
+          }
+          statusUpdated = true;
+        }
+      } catch (srErr) {
+        console.warn(`[Shiprocket Sync] Order details check failed for SR order ${order.shiprocket.orderId}:`, srErr.message);
+      }
+    }
+
+    // If still not cancelled, check for delivery or transit updates
+    if (order.orderStatus !== "CANCELLED") {
+      if (shipmentStatus === 7 || /DELIVERED/.test(currentStatus)) {
+        if (order.orderStatus !== "DELIVERED") {
+          order.orderStatus = "DELIVERED";
+          order.shiprocket.status = "DELIVERED";
+          statusUpdated = true;
+        }
+      } else if (shipmentStatus === 17 || shipmentStatus === 46 || /OUT.*DELIV/.test(currentStatus)) {
+        if (order.orderStatus !== "OUT_FOR_DELIVERY") {
+          order.orderStatus = "OUT_FOR_DELIVERY";
+          order.shiprocket.status = "OUT_FOR_DELIVERY";
+          statusUpdated = true;
+        }
+      } else if (
+        shipmentStatus === 6 ||
+        shipmentStatus === 18 ||
+        shipmentStatus === 42 ||
+        /TRANSIT|SHIPP|PICKED/.test(currentStatus)
+      ) {
+        if (order.orderStatus !== "SHIPPED") {
+          order.orderStatus = "SHIPPED";
+          order.shiprocket.status = "IN_TRANSIT";
+          statusUpdated = true;
+        }
+      }
+
+      // Sync AWB & Courier Name
+      const awb = trackingData?.shipment_track?.[0]?.awb_code;
+      if (awb && !order.shiprocket.awbCode) {
+        order.shiprocket.awbCode = awb;
+        statusUpdated = true;
+      }
+      const courier = trackingData?.shipment_track?.[0]?.courier_name;
+      if (courier && !order.shiprocket.courierName) {
+        order.shiprocket.courierName = courier;
+        statusUpdated = true;
+      }
+    }
+
+    if (statusUpdated) {
+      await order.save();
+    }
+  } catch (err) {
+    console.warn(`[Shiprocket Sync] Error syncing status for order ${order.orderId}:`, err.message);
+  }
+
+  return order;
+};
 
 
 // ==================================================
@@ -658,6 +773,12 @@ const getShipmentTracking = async (req, res) => {
       );
 
     // -----------------------------------------------
+    // SYNC ORDER STATUS WITH SHIPROCKET TRACKING
+    // -----------------------------------------------
+
+    await syncOrderShiprocketStatus(order, response);
+
+    // -----------------------------------------------
     // SUCCESS
     // -----------------------------------------------
 
@@ -669,6 +790,18 @@ const getShipmentTracking = async (req, res) => {
 
       shipmentId:
         order.shiprocket.shipmentId,
+
+      orderStatus:
+        order.orderStatus,
+
+      shiprocketStatus:
+        order.shiprocket.status,
+
+      isCancelled:
+        order.orderStatus === "CANCELLED",
+
+      cancellationReason:
+        order.cancellationReason || null,
 
       tracking:
         response,
@@ -805,6 +938,68 @@ const cancelShipment = async (req, res) => {
 
 
 // ==================================================
+// SHIPROCKET WEBHOOK HANDLER
+// ==================================================
+const handleShiprocketWebhook = async (req, res) => {
+  try {
+    console.log("SHIPROCKET WEBHOOK RECEIVED:", JSON.stringify(req.body, null, 2));
+
+    const payload = req.body || {};
+    const shipmentId = String(payload.shipment_id || payload.shipmentId || "");
+    const srOrderId = String(payload.order_id || payload.orderId || "");
+    const awb = String(payload.awb || payload.awb_code || "");
+    const customOrderId = String(payload.channel_order_id || payload.custom_order_id || "");
+    const status = String(payload.current_status || payload.status || "").toUpperCase();
+    const statusId = Number(payload.current_status_id || payload.shipment_status || 0);
+
+    const query = { $or: [] };
+    if (shipmentId) query.$or.push({ "shiprocket.shipmentId": shipmentId });
+    if (srOrderId) query.$or.push({ "shiprocket.orderId": srOrderId });
+    if (awb) query.$or.push({ "shiprocket.awbCode": awb });
+    if (customOrderId) query.$or.push({ orderId: customOrderId });
+
+    if (query.$or.length === 0) {
+      return res.status(200).json({ success: true, message: "No identifier found in webhook payload" });
+    }
+
+    const order = await Order.findOne(query);
+    if (!order) {
+      console.warn("Order not found for Shiprocket webhook query:", query);
+      return res.status(200).json({ success: true, message: "Order not found" });
+    }
+
+    if (statusId === 8 || /CANCEL/.test(status)) {
+      order.orderStatus = "CANCELLED";
+      order.shiprocket.status = "CANCELLED";
+      if (!order.cancelledAt) order.cancelledAt = new Date();
+      if (!order.cancellationReason) order.cancellationReason = "Cancelled via Shiprocket Webhook";
+    } else if (statusId === 7 || /DELIVERED/.test(status)) {
+      order.orderStatus = "DELIVERED";
+      order.shiprocket.status = "DELIVERED";
+    } else if (statusId === 17 || statusId === 46 || /OUT.*DELIV/.test(status)) {
+      order.orderStatus = "OUT_FOR_DELIVERY";
+      order.shiprocket.status = "OUT_FOR_DELIVERY";
+    } else if (statusId === 6 || statusId === 18 || statusId === 42 || /TRANSIT|SHIPP|PICKED/.test(status)) {
+      order.orderStatus = "SHIPPED";
+      order.shiprocket.status = "IN_TRANSIT";
+    }
+
+    if (awb && !order.shiprocket.awbCode) {
+      order.shiprocket.awbCode = awb;
+    }
+
+    await order.save();
+    console.log(`Order ${order.orderId} updated via Shiprocket webhook: orderStatus=${order.orderStatus}, shiprocket.status=${order.shiprocket.status}`);
+
+    return res.status(200).json({ success: true, message: "Webhook processed successfully" });
+  } catch (error) {
+    console.error("Shiprocket Webhook Error:", error);
+    return res.status(200).json({ success: false, error: error.message });
+  }
+};
+
+
+// ==================================================
 // EXPORT
 // ==================================================
 
@@ -814,4 +1009,6 @@ module.exports = {
   pickupShipment,
   getShipmentTracking,
   cancelShipment,
+  syncOrderShiprocketStatus,
+  handleShiprocketWebhook,
 };
