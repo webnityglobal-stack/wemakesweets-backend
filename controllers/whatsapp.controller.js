@@ -68,7 +68,21 @@ const sendMainMenu = async (to, name) => {
     { id: "CONTACT_QUERY", title: "📞 Contact / Query" },
   ];
 
-  return await sendInteractiveButtons(to, bodyText, buttons);
+  const res = await sendInteractiveButtons(to, bodyText, buttons);
+  if (!res.success) {
+    console.warn("⚠️ sendInteractiveButtons failed, sending fallback text menu...");
+    const websiteUrl =
+      process.env.FRONTEND_URL || "https://wemakesweets.com";
+    const textMenu =
+      `🍬 *Welcome to WeMake Sweets & Snacks${greetingName}!* 👋\n\n` +
+      `How can we help you today?\n\n` +
+      `1️⃣ *Browse Products:*\n${websiteUrl}/products\n\n` +
+      `2️⃣ *Track Order:*\nReply with your Order ID\n\n` +
+      `3️⃣ *Contact Us:*\n${process.env.SUPPORT_PHONE || "+91 98765 43210"}\n\n` +
+      `_Reply with your Order ID or *Hi* anytime._`;
+    return await sendTextMessage(to, textMenu);
+  }
+  return res;
 };
 
 /**
@@ -354,6 +368,12 @@ const handleWebhook = async (req, res) => {
             console.log(
               `📊 STATUS: To: ${status.recipient_id} | Status: ${status.status}`
             );
+            if (status.status === "failed" && status.errors) {
+              console.error(
+                `❌ STATUS DELIVERY FAILED DETAILS:`,
+                JSON.stringify(status.errors, null, 2)
+              );
+            }
           }
         }
       }
