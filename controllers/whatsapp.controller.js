@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 const {
   sendTextMessage,
   sendInteractiveButtons,
+  sendWelcomeTemplate,
 } = require("../services/whatsappService");
 
 // In-memory conversation session store (phone -> { step, time })
@@ -55,8 +56,7 @@ const verifyWebhook = (req, res) => {
 /**
  * Send the main Welcome menu with 3 interactive buttons
  */
-
-const sendMainMenu = async (to, name) => {
+const sendMainMenu = async (to, name, phoneId) => {
   clearSession(to);
 
   const greetingName = name ? ` ${name}` : "";
@@ -68,7 +68,7 @@ const sendMainMenu = async (to, name) => {
     { id: "CONTACT_QUERY", title: "📞 Contact / Query" },
   ];
 
-  const res = await sendInteractiveButtons(to, bodyText, buttons);
+  const res = await sendInteractiveButtons(to, bodyText, buttons, phoneId);
   if (!res.success) {
     console.warn("⚠️ sendInteractiveButtons failed, sending fallback text menu...");
     const websiteUrl =
@@ -80,7 +80,7 @@ const sendMainMenu = async (to, name) => {
       `2️⃣ *Track Order:*\nReply with your Order ID\n\n` +
       `3️⃣ *Contact Us:*\n${process.env.SUPPORT_PHONE || "+91 98765 43210"}\n\n` +
       `_Reply with your Order ID or *Hi* anytime._`;
-    return await sendTextMessage(to, textMenu);
+    return await sendTextMessage(to, textMenu, phoneId);
   }
   return res;
 };
@@ -88,11 +88,11 @@ const sendMainMenu = async (to, name) => {
 /**
  * Handle "🛍️ View Products" button click or text
  */
-const handleViewProducts = async (to) => {
+const handleViewProducts = async (to, phoneId) => {
   clearSession(to);
 
   const websiteUrl =
-    process.env.FRONTEND_URL || "https://wemakesweets.vercel.app";
+    process.env.FRONTEND_URL || "https://wemakesweets.com";
 
   const message =
     `🍬 *Explore Our Products*\n\n` +
@@ -101,19 +101,19 @@ const handleViewProducts = async (to) => {
     `${websiteUrl}/products\n\n` +
     `_Reply *Hi* anytime to return to the main menu._`;
 
-  return await sendTextMessage(to, message);
+  return await sendTextMessage(to, message, phoneId);
 };
 
 /**
  * Handle "📞 Contact / Query" button click or text
  */
-const handleContactQuery = async (to) => {
+const handleContactQuery = async (to, phoneId) => {
   clearSession(to);
 
   const supportPhone = process.env.SUPPORT_PHONE || "+91 98765 43210";
   const supportEmail = process.env.SUPPORT_EMAIL || "support@wemakesweets.com";
   const websiteUrl =
-    process.env.FRONTEND_URL || "https://wemakesweets.vercel.app";
+    process.env.FRONTEND_URL || "https://wemakesweets.com";
 
   const message =
     `📞 *Contact WeMake Sweets & Snacks*\n\n` +
@@ -123,13 +123,13 @@ const handleContactQuery = async (to) => {
     `🌐 *Website:* ${websiteUrl}\n\n` +
     `_Reply *Hi* anytime to return to the main menu._`;
 
-  return await sendTextMessage(to, message);
+  return await sendTextMessage(to, message, phoneId);
 };
 
 /**
  * Handle "📦 Track Order" button click: Prompt customer for Order ID
  */
-const handleTrackOrderPrompt = async (to) => {
+const handleTrackOrderPrompt = async (to, phoneId) => {
   setSession(to, { step: "AWAITING_ORDER_ID" });
 
   const message =
@@ -137,17 +137,17 @@ const handleTrackOrderPrompt = async (to) => {
     `Please reply with your *Order ID* (for example: *WMS12345* or your Order Number).\n\n` +
     `_Or reply *Hi* to cancel and return to the main menu._`;
 
-  return await sendTextMessage(to, message);
+  return await sendTextMessage(to, message, phoneId);
 };
 
 /**
  * Look up order in MongoDB and reply with live status
  */
-const handleOrderStatusLookup = async (to, orderQuery) => {
+const handleOrderStatusLookup = async (to, orderQuery, phoneId) => {
   const cleanId = String(orderQuery || "").trim();
 
   if (!cleanId) {
-    return await handleTrackOrderPrompt(to);
+    return await handleTrackOrderPrompt(to, phoneId);
   }
 
   try {
@@ -165,7 +165,7 @@ const handleOrderStatusLookup = async (to, orderQuery) => {
         `We couldn't find any order matching "*${cleanId}*".\n\n` +
         `Please check your Order ID and try again, or reply *Hi* to return to the main menu.`;
 
-      return await sendTextMessage(to, notFoundMessage);
+      return await sendTextMessage(to, notFoundMessage, phoneId);
     }
 
     // Clear tracking session on match
@@ -227,12 +227,13 @@ const handleOrderStatusLookup = async (to, orderQuery) => {
       `Thank you for shopping with WeMake Sweets & Snacks! ❤️\n\n` +
       `_Reply *Hi* anytime to return to the main menu._`;
 
-    return await sendTextMessage(to, responseMessage);
+    return await sendTextMessage(to, responseMessage, phoneId);
   } catch (err) {
     console.error("Error looking up order in WhatsApp bot:", err);
     return await sendTextMessage(
       to,
-      "⚠️ An error occurred while retrieving your order. Please try again or contact support."
+      "⚠️ An error occurred while retrieving your order. Please try again or contact support.",
+      phoneId
     );
   }
 };
@@ -258,6 +259,15 @@ const handleWebhook = async (req, res) => {
 
       for (const change of changes) {
         const value = change.value || {};
+        const metadata = value.metadata || {};
+        const receivingPhoneId = metadata.phone_number_id;
+        const receivingDisplayPhone = metadata.display_phone_number;
+
+        if (receivingPhoneId) {
+          console.log(
+            `📱 Incoming Webhook on Phone ID: ${receivingPhoneId} (${receivingDisplayPhone})`
+          );
+        }
 
         // ---------------------------------------------
         // PROCESS INCOMING MESSAGES
@@ -273,6 +283,7 @@ const handleWebhook = async (req, res) => {
             console.log("📩 INCOMING WHATSAPP MESSAGE:");
             console.log(`   👤 From: ${senderName} (${senderPhone})`);
             console.log(`   💬 Type: ${msgType}`);
+            console.log(`   📲 Target Phone ID: ${receivingPhoneId}`);
 
             // 1. INTERACTIVE BUTTON CLICK
             if (msgType === "interactive") {
@@ -283,13 +294,13 @@ const handleWebhook = async (req, res) => {
                 console.log(`   🔘 Button Pressed: ${buttonId}`);
 
                 if (buttonId === "VIEW_PRODUCTS") {
-                  await handleViewProducts(senderPhone);
+                  await handleViewProducts(senderPhone, receivingPhoneId);
                 } else if (buttonId === "TRACK_ORDER") {
-                  await handleTrackOrderPrompt(senderPhone);
+                  await handleTrackOrderPrompt(senderPhone, receivingPhoneId);
                 } else if (buttonId === "CONTACT_QUERY") {
-                  await handleContactQuery(senderPhone);
+                  await handleContactQuery(senderPhone, receivingPhoneId);
                 } else {
-                  await sendMainMenu(senderPhone, senderName);
+                  await sendMainMenu(senderPhone, senderName, receivingPhoneId);
                 }
               }
               continue;
@@ -315,13 +326,13 @@ const handleWebhook = async (req, res) => {
               ].includes(lowerText);
 
               if (isGreeting) {
-                await sendMainMenu(senderPhone, senderName);
+                await sendMainMenu(senderPhone, senderName, receivingPhoneId);
                 continue;
               }
 
               // Check for direct keywords
               if (lowerText.includes("product") || lowerText.includes("sweet")) {
-                await handleViewProducts(senderPhone);
+                await handleViewProducts(senderPhone, receivingPhoneId);
                 continue;
               }
 
@@ -330,7 +341,7 @@ const handleWebhook = async (req, res) => {
                 lowerText.includes("support") ||
                 lowerText.includes("call")
               ) {
-                await handleContactQuery(senderPhone);
+                await handleContactQuery(senderPhone, receivingPhoneId);
                 continue;
               }
 
@@ -339,7 +350,7 @@ const handleWebhook = async (req, res) => {
                 lowerText === "track order" ||
                 lowerText === "order status"
               ) {
-                await handleTrackOrderPrompt(senderPhone);
+                await handleTrackOrderPrompt(senderPhone, receivingPhoneId);
                 continue;
               }
 
@@ -350,18 +361,18 @@ const handleWebhook = async (req, res) => {
                 text.split(" ").length === 1;
 
               if (session?.step === "AWAITING_ORDER_ID" || looksLikeOrderId) {
-                await handleOrderStatusLookup(senderPhone, text);
+                await handleOrderStatusLookup(senderPhone, text, receivingPhoneId);
                 continue;
               }
 
               // Fallback: If not recognized, send main menu
-              await sendMainMenu(senderPhone, senderName);
+              await sendMainMenu(senderPhone, senderName, receivingPhoneId);
             }
           }
         }
 
         // ---------------------------------------------
-        // PROCESS MESSAGE STATUS UPDATES (Sent, Delivered, Read)
+        // PROCESS MESSAGE STATUS UPDATES (Sent, Delivered, Read, Failed)
         // ---------------------------------------------
         if (value.statuses && value.statuses.length > 0) {
           for (const status of value.statuses) {
@@ -373,6 +384,24 @@ const handleWebhook = async (req, res) => {
                 `❌ STATUS DELIVERY FAILED DETAILS:`,
                 JSON.stringify(status.errors, null, 2)
               );
+
+              // Auto-Recovery for Error 131047 (Re-engagement message / >24 hours passed)
+              const is24HrError = status.errors.some(
+                (err) =>
+                  err.code === 131047 ||
+                  String(err.details || "").includes("24 hours")
+              );
+
+              if (is24HrError) {
+                console.log(
+                  `🔄 [Auto-Recovery] Detected Error 131047 for ${status.recipient_id}. Sending approved welcome template to re-establish session...`
+                );
+                await sendWelcomeTemplate(
+                  status.recipient_id,
+                  "Valued Customer",
+                  receivingPhoneId
+                );
+              }
             }
           }
         }

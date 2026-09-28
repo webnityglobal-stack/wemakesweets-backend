@@ -1,9 +1,9 @@
 const axios = require("axios");
 
 // WhatsApp API configuration
-const getWhatsappConfig = () => {
+const getWhatsappConfig = (overridePhoneNumberId) => {
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
-  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const phoneNumberId = overridePhoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID;
   let version = process.env.WHATSAPP_API_VERSION || "v21.0";
   if (!version.startsWith("v") || parseInt(version.slice(1)) > 23) {
     version = "v21.0";
@@ -39,8 +39,8 @@ const formatPhoneNumber = (phone) => {
 /**
  * Core send helper for WhatsApp Cloud API
  */
-const callWhatsappApi = async (payload) => {
-  const { token, url } = getWhatsappConfig();
+const callWhatsappApi = async (payload, overridePhoneNumberId) => {
+  const { token, url } = getWhatsappConfig(overridePhoneNumberId);
 
   if (!token || !url) {
     console.error("❌ WhatsApp configuration missing in .env");
@@ -66,7 +66,7 @@ const callWhatsappApi = async (payload) => {
 /**
  * Send standard plain text message
  */
-const sendTextMessage = async (to, text) => {
+const sendTextMessage = async (to, text, overridePhoneNumberId) => {
   const formattedPhone = formatPhoneNumber(to);
   if (!formattedPhone) return { success: false, error: "Invalid phone number" };
 
@@ -78,7 +78,7 @@ const sendTextMessage = async (to, text) => {
     text: { body: text },
   };
 
-  return await callWhatsappApi(payload);
+  return await callWhatsappApi(payload, overridePhoneNumberId);
 };
 
 /**
@@ -87,7 +87,7 @@ const sendTextMessage = async (to, text) => {
  * @param {string} bodyText - Main text body
  * @param {Array<{id: string, title: string}>} buttons - Array of button objects (max 3)
  */
-const sendInteractiveButtons = async (to, bodyText, buttons = []) => {
+const sendInteractiveButtons = async (to, bodyText, buttons = [], overridePhoneNumberId) => {
   const formattedPhone = formatPhoneNumber(to);
   if (!formattedPhone) return { success: false, error: "Invalid phone number" };
 
@@ -111,7 +111,7 @@ const sendInteractiveButtons = async (to, bodyText, buttons = []) => {
     },
   };
 
-  return await callWhatsappApi(payload);
+  return await callWhatsappApi(payload, overridePhoneNumberId);
 };
 
 /**
@@ -125,7 +125,8 @@ const sendTemplateMessage = async (
   to,
   templateName,
   bodyParameters = [],
-  languageCode = "en"
+  languageCode = "en",
+  overridePhoneNumberId
 ) => {
   const formattedPhone = formatPhoneNumber(to);
   if (!formattedPhone) return { success: false, error: "Invalid phone number" };
@@ -155,7 +156,7 @@ const sendTemplateMessage = async (
   });
 
   // Try with preferred language (e.g. "en")
-  let result = await callWhatsappApi(buildPayload(languageCode));
+  let result = await callWhatsappApi(buildPayload(languageCode), overridePhoneNumberId);
 
   // If failed due to language translation mismatch (Error 132001 or language mismatch), retry with alternate
   const errStr = JSON.stringify(result.error || "");
@@ -169,7 +170,7 @@ const sendTemplateMessage = async (
     console.log(
       `🔄 Retrying template '${templateName}' with alternate language code: '${alternateCode}'...`
     );
-    result = await callWhatsappApi(buildPayload(alternateCode));
+    result = await callWhatsappApi(buildPayload(alternateCode), overridePhoneNumberId);
   }
 
   return result;
@@ -184,8 +185,36 @@ const sendTemplateMessage = async (
  * Template: wms_welcome
  * {{1}} = Customer Name
  */
-const sendWelcomeTemplate = async (to, customerName) => {
-  return await sendTemplateMessage(to, "wms_welcome", [customerName || "Friend"], "en");
+const sendWelcomeTemplate = async (to, customerName, overridePhoneNumberId) => {
+  let res = await sendTemplateMessage(
+    to,
+    "wms_welcome",
+    [customerName || "Friend"],
+    "en",
+    overridePhoneNumberId
+  );
+  if (!res.success) {
+    const errStr = JSON.stringify(res.error || "");
+    if (
+      errStr.includes("132001") ||
+      errStr.includes("132000") ||
+      errStr.toLowerCase().includes("does not exist") ||
+      errStr.toLowerCase().includes("template")
+    ) {
+      console.warn(
+        "⚠️ 'wms_welcome' template unavailable, falling back to 'hello_world' template..."
+      );
+      const helloRes = await sendTemplateMessage(
+        to,
+        "hello_world",
+        [],
+        "en_US",
+        overridePhoneNumberId
+      );
+      if (helloRes.success) return helloRes;
+    }
+  }
+  return res;
 };
 
 /**
