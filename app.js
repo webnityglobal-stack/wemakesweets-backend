@@ -23,7 +23,8 @@ app.use(
       "http://localhost:5174",
       "https://we-make-sweets-admin.vercel.app",
       "https://darkslategray-horse-285328.hostingersite.com",
-      "https://salmon-coyote-671066.hostingersite.com"
+      "https://salmon-coyote-671066.hostingersite.com",
+      "https://wemakesweets.com"
     ],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
