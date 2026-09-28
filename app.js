@@ -249,6 +249,22 @@ app.use(
 
 
 // ====================================================
+// GOOGLE ANALYTICS ROUTES
+// ====================================================
+
+app.use(
+  "/api/analytics",
+  require("./routes/analyticsRoutes")
+);
+
+app.use(
+  "/api/admin/analytics",
+  require("./routes/analyticsRoutes")
+);
+
+
+
+// ====================================================
 // ERROR MIDDLEWARE
 // ====================================================
 
