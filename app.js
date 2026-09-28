@@ -48,7 +48,7 @@ Isliye ye route express.json() se PEHLE hona chahiye.
 app.use(
   "/api/payment/fastrr/webhook",
   express.raw({
-    type: "application/json",
+    type: "*/*",
   })
 );
 

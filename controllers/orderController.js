@@ -5,6 +5,14 @@ const Product = require("../models/product");
 const User = require("../models/user");
 const Payment = require("../models/payment");
 
+const {
+  createShiprocketOrder,
+} = require("../services/shiprocketService");
+const {
+  fetchFastRROrderDetails,
+} = require("../services/fastrrService");
+const whatsappService = require("../services/whatsappService");
+
 // =====================================================
 // CREATE / PLACE ORDER
 // =====================================================
@@ -573,6 +581,37 @@ const getOrderById = async (
         message:
           "Order not found",
       });
+    }
+
+    // Auto-sync with FastRR if order is not confirmed or shiprocket not created
+    if (order.orderStatus !== "CONFIRMED" || !order.shiprocket?.orderId) {
+      try {
+        const payment = await Payment.findOne({ order: order._id });
+        if (payment && payment.gatewayOrderId) {
+          const checkoutDetails = await fetchFastRROrderDetails(
+            String(payment.gatewayOrderId)
+          );
+          const status = String(
+            checkoutDetails?.result?.status || checkoutDetails?.status || ""
+          ).toUpperCase();
+
+          if (status === "SUCCESS") {
+            const { syncFastrrOrder } = require("./paymentController");
+            await syncFastrrOrder(order, payment, checkoutDetails, null);
+            const syncedOrder = await Order.findById(order._id)
+              .populate("items.product", "name price images sku")
+              .populate("paymentId");
+            if (syncedOrder) {
+              return res.status(200).json({
+                success: true,
+                order: syncedOrder,
+              });
+            }
+          }
+        }
+      } catch (syncErr) {
+        console.warn("Could not auto-sync FastRR in getOrderById:", syncErr.message);
+      }
     }
 
     return res.status(200).json({

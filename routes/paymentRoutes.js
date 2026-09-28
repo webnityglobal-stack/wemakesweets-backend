@@ -5,6 +5,7 @@ const router = express.Router();
 const {
   createPayment,
   paymentSuccess,
+  verifyPayment,
   paymentFailed,
   fastrrWebhook,
   getPayment,
@@ -38,6 +39,19 @@ router.post(
   "/success",
   authMiddleware,
   paymentSuccess
+);
+
+
+// =====================================================
+// VERIFY PAYMENT & SYNC FASTRR ORDER
+//
+// POST /api/payment/verify
+// =====================================================
+
+router.post(
+  "/verify",
+  authMiddleware,
+  verifyPayment
 );
 
 
