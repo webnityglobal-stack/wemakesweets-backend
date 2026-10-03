@@ -1,9 +1,77 @@
 const axios = require("axios");
+const SystemConfig = require("../models/systemConfig");
+
+// In-memory cache for production phone number ID
+let activeProductionPhoneId = null;
+let activeProductionDisplayPhone = null;
+
+// Load persisted production phone ID from MongoDB
+const loadProductionPhoneIdFromDb = async () => {
+  try {
+    const config = await SystemConfig.findOne({
+      key: "WHATSAPP_PRODUCTION_PHONE_ID",
+    });
+    if (config && config.value) {
+      activeProductionPhoneId = String(config.value.phoneId || config.value);
+      activeProductionDisplayPhone = config.value.displayPhone || null;
+      console.log(
+        `✅ [WhatsApp] Loaded Active Production Phone ID from DB: ${activeProductionPhoneId} (${activeProductionDisplayPhone})`
+      );
+      return activeProductionPhoneId;
+    }
+  } catch (err) {
+    // Database might not be connected yet during initial module require
+  }
+  return null;
+};
+
+// Attempt initial load immediately
+loadProductionPhoneIdFromDb();
+
+/**
+ * Set and persist active production phone number ID
+ */
+const setActivePhoneNumberId = async (phoneId, displayPhone) => {
+  if (!phoneId) return;
+  activeProductionPhoneId = String(phoneId);
+  if (displayPhone) activeProductionDisplayPhone = String(displayPhone);
+
+  try {
+    await SystemConfig.findOneAndUpdate(
+      { key: "WHATSAPP_PRODUCTION_PHONE_ID" },
+      {
+        key: "WHATSAPP_PRODUCTION_PHONE_ID",
+        value: {
+          phoneId: String(phoneId),
+          displayPhone: displayPhone || "",
+        },
+        description: "Active WhatsApp Production Phone Number ID",
+      },
+      { upsert: true, new: true }
+    );
+    console.log(
+      `💾 [WhatsApp] Persisted Active Production Phone ID: ${phoneId} (${displayPhone || "N/A"})`
+    );
+  } catch (err) {
+    console.warn("⚠️ [WhatsApp] Could not persist phone ID to DB:", err.message);
+  }
+};
+
+const getActiveProductionPhoneId = () => {
+  return activeProductionPhoneId;
+};
+
+const getActiveProductionDisplayPhone = () => {
+  return activeProductionDisplayPhone;
+};
 
 // WhatsApp API configuration
 const getWhatsappConfig = (overridePhoneNumberId) => {
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
-  const phoneNumberId = overridePhoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const phoneNumberId =
+    overridePhoneNumberId ||
+    activeProductionPhoneId ||
+    process.env.WHATSAPP_PHONE_NUMBER_ID;
   let version = process.env.WHATSAPP_API_VERSION || "v21.0";
   if (!version.startsWith("v") || parseInt(version.slice(1)) > 23) {
     version = "v21.0";
@@ -477,5 +545,9 @@ module.exports = {
   sendOutForDeliveryTemplate,
   sendOrderDeliveredTemplate,
   sendOrderStatusNotification,
+  setActivePhoneNumberId,
+  getActiveProductionPhoneId,
+  getActiveProductionDisplayPhone,
+  loadProductionPhoneIdFromDb,
 };
 

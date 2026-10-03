@@ -4,6 +4,8 @@ const {
   sendTextMessage,
   sendInteractiveButtons,
   sendWelcomeTemplate,
+  setActivePhoneNumberId,
+  getActiveProductionPhoneId,
 } = require("../services/whatsappService");
 
 // In-memory conversation session store (phone -> { step, time })
@@ -267,6 +269,17 @@ const handleWebhook = async (req, res) => {
           console.log(
             `📱 Incoming Webhook on Phone ID: ${receivingPhoneId} (${receivingDisplayPhone})`
           );
+
+          // If incoming message is on production number (not a 1555 sandbox test number), auto-persist as active production phone ID
+          const isTestNumber = String(receivingDisplayPhone || "").startsWith("1555");
+          if (!isTestNumber && receivingPhoneId !== getActiveProductionPhoneId()) {
+            console.log(
+              `🌟 [WhatsApp Bot] Detected Production Number: ${receivingPhoneId} (${receivingDisplayPhone}). Setting as default active ID for all outbound triggers!`
+            );
+            setActivePhoneNumberId(receivingPhoneId, receivingDisplayPhone).catch(
+              (err) => console.warn("Failed to save active phone ID:", err.message)
+            );
+          }
         }
 
         // ---------------------------------------------
