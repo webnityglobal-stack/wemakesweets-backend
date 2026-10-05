@@ -2,6 +2,7 @@ const Product = require("../models/product");
 const Collection = require("../models/Collection");
 const Review = require("../models/review");
 const generateShiprocketId = require("../utils/generateShiprocketId");
+const { syncProductToFastRR } = require("../services/fastrrService");
 const fs = require("fs");
 const path = require("path");
 
@@ -635,6 +636,10 @@ const addProduct = async (
       finalProduct.collections
     );
 
+    syncProductToFastRR(finalProduct).catch((err) =>
+      console.warn("FastRR sync on add product:", err.message)
+    );
+
     return res.status(201).json({
       success: true,
       message:
@@ -1124,6 +1129,10 @@ const updateProduct = async (
       await Product.findById(
         product._id
       );
+
+    syncProductToFastRR(updatedProduct).catch((err) =>
+      console.warn("FastRR sync on update product:", err.message)
+    );
 
     return res.status(200).json({
       success: true,

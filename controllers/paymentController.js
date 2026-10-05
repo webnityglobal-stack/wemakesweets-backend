@@ -783,6 +783,31 @@ const createPayment = async (
         );
       }
 
+      const itemPrice = Number(
+        item.price ??
+        variant.salePrice ??
+        product.salePrice ??
+        product.price ??
+        0
+      );
+
+      const itemName = variant.title
+        ? `${product.name} - ${variant.title}`
+        : product.name || item.name || "Sweet Item";
+
+      let itemImage =
+        product.images?.[0] ||
+        item.image ||
+        "https://wemakesweets.com/product1.webp";
+
+      if (typeof itemImage === "string" && !/^https?:\/\//i.test(itemImage)) {
+        const backendUrl = (
+          process.env.BACKEND_URL ||
+          "https://salmon-coyote-671066.hostingersite.com"
+        ).replace(/\/$/, "");
+        itemImage = `${backendUrl}${itemImage.startsWith("/") ? "" : "/"}${itemImage}`;
+      }
+
       items.push({
         variant_id:
           String(
@@ -793,6 +818,12 @@ const createPayment = async (
           Number(
             item.quantity
           ),
+
+        catalog_data: {
+          price: itemPrice,
+          name: itemName,
+          image_url: itemImage,
+        },
       });
     }
 

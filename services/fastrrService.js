@@ -232,10 +232,87 @@ const fetchFastRROrderDetails = async (
 
 
 // =====================================================
+// SYNC PRODUCT TO FASTRR WEBHOOK
+// =====================================================
+
+const syncProductToFastRR = async (product) => {
+  try {
+    if (!product || !product.shiprocketId) return;
+
+    const payload = {
+      id: Number(product.shiprocketId),
+      title: product.name || "",
+      body_html: product.description || "",
+      vendor: "We Make Sweets",
+      product_type: "Sweets",
+      created_at: product.createdAt
+        ? new Date(product.createdAt).toISOString()
+        : new Date().toISOString(),
+      handle: product.slug || `product-${product.shiprocketId}`,
+      updated_at: new Date().toISOString(),
+      tags: "",
+      status: "active",
+      variants: (product.variants || []).map((v) => ({
+        id: Number(v.shiprocketId),
+        title: v.title || "Default",
+        price: String(v.salePrice || product.salePrice || 0),
+        compare_at_price: String(v.mrp || product.mrp || 0),
+        sku: v.sku || `SKU-${v.shiprocketId}`,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        quantity: v.stock || 20,
+        taxable: true,
+        grams: v.weight || 250,
+        image: {
+          src:
+            product.images?.[0] ||
+            "https://wemakesweets.com/product1.webp",
+        },
+        weight: v.weight || 250,
+        weight_unit: "g",
+        option_values: {},
+      })),
+      image: {
+        src:
+          product.images?.[0] ||
+          "https://wemakesweets.com/product1.webp",
+      },
+      options: [],
+    };
+
+    const rawBody = JSON.stringify(payload);
+    const hmac = generateHmac(rawBody);
+
+    const headers = {
+      "Content-Type": "application/json",
+      "X-Api-Key": process.env.FASTRR_API_KEY,
+      "X-Api-HMAC-SHA256": hmac,
+    };
+
+    const res = await axios.post(
+      `${FASTRR_BASE_URL}/wh/v1/custom/product`,
+      rawBody,
+      { headers, timeout: 15000, validateStatus: () => true }
+    );
+
+    console.log(
+      `FastRR product webhook synced for ${product.name}: status ${res.status}`
+    );
+    return res.data;
+  } catch (err) {
+    console.warn(
+      `FastRR product webhook sync warning for ${product?.name}:`,
+      err.message
+    );
+  }
+};
+
+// =====================================================
 // EXPORTS
 // =====================================================
 
 module.exports = {
   createCheckout,
   fetchFastRROrderDetails,
+  syncProductToFastRR,
 };
