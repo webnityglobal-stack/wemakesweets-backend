@@ -71,7 +71,8 @@ const getWhatsappConfig = (overridePhoneNumberId) => {
   const phoneNumberId =
     overridePhoneNumberId ||
     activeProductionPhoneId ||
-    process.env.WHATSAPP_PHONE_NUMBER_ID;
+    process.env.WHATSAPP_PHONE_NUMBER_ID ||
+    "1363580763498984";
   let version = process.env.WHATSAPP_API_VERSION || "v21.0";
   if (!version.startsWith("v") || parseInt(version.slice(1)) > 23) {
     version = "v21.0";
@@ -94,8 +95,10 @@ const formatPhoneNumber = (phone) => {
   if (!phone) return "";
   let cleaned = String(phone).replace(/\D/g, "");
   // Strip leading zeros
-  if (cleaned.startsWith("0")) {
-    cleaned = cleaned.replace(/^0+/, "");
+  cleaned = cleaned.replace(/^0+/, "");
+  // If user entered e.g. +91 09876543210
+  if (cleaned.startsWith("910") && cleaned.length === 13) {
+    cleaned = "91" + cleaned.slice(3);
   }
   // Standard 10-digit Indian phone number
   if (cleaned.length === 10) {
@@ -108,6 +111,9 @@ const formatPhoneNumber = (phone) => {
  * Core send helper for WhatsApp Cloud API
  */
 const callWhatsappApi = async (payload, overridePhoneNumberId) => {
+  if (!activeProductionPhoneId && !overridePhoneNumberId) {
+    await loadProductionPhoneIdFromDb();
+  }
   const { token, url } = getWhatsappConfig(overridePhoneNumberId);
 
   if (!token || !url) {
@@ -290,7 +296,7 @@ const sendWelcomeTemplate = async (to, customerName, overridePhoneNumberId) => {
  * Attempts approved template 'wms_welcome' first (with en/en_US auto-retry).
  * If template fails (e.g. pending Meta approval), falls back to rich text message.
  */
-const sendWelcomeNotification = async (to, customerName) => {
+const sendWelcomeNotification = async (to, customerName, overridePhoneNumberId) => {
   const formattedPhone = formatPhoneNumber(to);
   if (!formattedPhone) {
     console.warn("⚠️ Invalid phone number for welcome message:", to);
@@ -300,8 +306,13 @@ const sendWelcomeNotification = async (to, customerName) => {
   const name = customerName || "Friend";
   console.log(`📩 Initiating WhatsApp Welcome message to ${formattedPhone} (${name})...`);
 
+  // Ensure production phone ID is loaded
+  if (!activeProductionPhoneId && !overridePhoneNumberId) {
+    await loadProductionPhoneIdFromDb();
+  }
+
   // 1. Try sending the official wms_welcome template
-  const templateResult = await sendWelcomeTemplate(formattedPhone, name);
+  const templateResult = await sendWelcomeTemplate(formattedPhone, name, overridePhoneNumberId);
   if (templateResult.success) {
     console.log(`✅ [WhatsApp Welcome] Template 'wms_welcome' sent successfully to ${formattedPhone}`);
     return templateResult;
@@ -321,7 +332,7 @@ const sendWelcomeNotification = async (to, customerName) => {
   // 2. Fallback: If template failed, try sending a rich text message
   // (Works if user already chatted with the bot within the 24-hr customer service window)
   const websiteUrl =
-    process.env.FRONTEND_URL || "https://wemakesweets.vercel.app";
+    process.env.FRONTEND_URL || "https://wemakesweets.com";
   const fallbackMessage =
     `🍬 *Welcome to WeMake Sweets & Snacks, ${name}!* 👋\n\n` +
     `We're delighted to have you with us! Discover our delicious range of authentic, traditional sweets and snacks, made fresh to bring sweetness to every celebration.\n\n` +
@@ -329,7 +340,7 @@ const sendWelcomeNotification = async (to, customerName) => {
     `Thank you for joining WeMake Sweets & Snacks! ❤️\n` +
     `_Reply *Hi* anytime to browse products, track orders, or get help._`;
 
-  const textResult = await sendTextMessage(formattedPhone, fallbackMessage);
+  const textResult = await sendTextMessage(formattedPhone, fallbackMessage, overridePhoneNumberId);
   if (textResult.success) {
     console.log(
       `✅ [WhatsApp Welcome] Fallback text message sent successfully to ${formattedPhone}`
