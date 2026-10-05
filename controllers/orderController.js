@@ -287,6 +287,23 @@ const createOrder = async (req, res) => {
     }
 
     // =================================================
+    // CALCULATE SUBTOTAL & SHIPPING CHARGE
+    // =================================================
+
+    const subtotal = totalAmount;
+
+    // Delivery charge rule:
+    // If passed explicitly from client, use it; otherwise standard rule: free if subtotal >= 350, else 49.
+    const shippingCharge =
+      req.body.shippingCharge !== undefined
+        ? Math.max(0, Number(req.body.shippingCharge) || 0)
+        : subtotal >= 350 || subtotal === 0
+        ? 0
+        : 49;
+
+    const finalTotalAmount = subtotal + shippingCharge;
+
+    // =================================================
     // GENERATE ORDER ID
     // =================================================
 
@@ -314,7 +331,12 @@ const createOrder = async (req, res) => {
         items:
           orderItems,
 
-        totalAmount,
+        subtotal,
+
+        shippingCharge,
+
+        totalAmount:
+          finalTotalAmount,
 
         paymentMethod,
 
@@ -374,7 +396,7 @@ const createOrder = async (req, res) => {
           userId,
 
         amount:
-          totalAmount,
+          finalTotalAmount,
 
         currency:
           "INR",

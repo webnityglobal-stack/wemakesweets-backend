@@ -272,23 +272,19 @@ const buildShiprocketOrderPayload = (
 
   const phone = normalizePhone(address.phone || order.user?.phone || "");
 
-  const shiprocketItems =
-    order.items.map(
-      (item) => ({
-        name:
-          item.name,
-
-        sku:
-          item.sku ||
-          item.product?.toString(),
-
-        units:
-          Number(item.quantity),
-
-        selling_price:
-          Number(item.price),
-      })
-    );
+  const shiprocketItems = order.items
+    .filter(
+      (item) =>
+        !/delivery/i.test(item.name || "") &&
+        !/shipping/i.test(item.name || "") &&
+        String(item.variantId) !== "9999999999"
+    )
+    .map((item) => ({
+      name: item.name,
+      sku: item.sku || item.product?.toString(),
+      units: Number(item.quantity),
+      selling_price: Number(item.price),
+    }));
 
   const isCOD =
     String(paymentMethod || "")
@@ -406,7 +402,7 @@ const buildShiprocketOrderPayload = (
     // =================================================
 
     shipping_charges:
-      0,
+      Number(order.shippingCharge || 0),
 
     giftwrap_charges:
       0,
@@ -823,6 +819,38 @@ const createPayment = async (
           price: itemPrice,
           name: itemName,
           image_url: itemImage,
+        },
+      });
+    }
+
+    // =================================================
+    // DELIVERY / SHIPPING CHARGE FOR FASTRR
+    // =================================================
+
+    const deliveryCharge = Number(
+      order.shippingCharge !== undefined && order.shippingCharge !== null
+        ? order.shippingCharge
+        : order.totalAmount && order.items?.length
+        ? Math.max(
+            0,
+            order.totalAmount -
+              order.items.reduce(
+                (acc, it) =>
+                  acc + (Number(it.price) * Number(it.quantity) || 0),
+                0
+              )
+          )
+        : 0
+    );
+
+    if (deliveryCharge > 0) {
+      items.push({
+        variant_id: "9999999999",
+        quantity: 1,
+        catalog_data: {
+          price: deliveryCharge,
+          name: "Delivery Charges",
+          image_url: "https://wemakesweets.com/delivery.png",
         },
       });
     }

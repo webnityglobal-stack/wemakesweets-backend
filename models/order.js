@@ -244,6 +244,22 @@ const orderSchema = new mongoose.Schema(
     },
 
     // =================================================
+    // SUBTOTAL & SHIPPING CHARGE
+    // =================================================
+
+    subtotal: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    shippingCharge: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    // =================================================
     // TOTAL AMOUNT
     // =================================================
 
