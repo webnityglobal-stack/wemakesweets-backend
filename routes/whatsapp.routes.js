@@ -1,4 +1,5 @@
 const express = require("express");
+const axios = require("axios");
 
 const {
   verifyWebhook,
@@ -85,6 +86,46 @@ router.get("/test-send", async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Diagnostic endpoint: Get all registered message templates directly from Meta Graph API
+router.get("/templates", async (req, res) => {
+  try {
+    const wabaId =
+      req.query.wabaId ||
+      process.env.WHATSAPP_BUSINESS_ACCOUNT_ID ||
+      "1364285165787656";
+    const token = process.env.WHATSAPP_ACCESS_TOKEN;
+    const version = process.env.WHATSAPP_API_VERSION || "v21.0";
+
+    const response = await axios.get(
+      `https://graph.facebook.com/${version}/${wabaId}/message_templates`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    return res.json({
+      success: true,
+      wabaId,
+      totalCount: response.data.data?.length,
+      templates: response.data.data.map((t) => ({
+        id: t.id,
+        name: t.name,
+        status: t.status,
+        language: t.language,
+        category: t.category,
+        components: t.components,
+      })),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: error.response?.data || error.message,
+    });
   }
 });
 

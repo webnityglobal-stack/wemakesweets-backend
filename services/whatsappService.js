@@ -266,6 +266,7 @@ const sendTemplateMessage = async (
  * {{1}} = Customer Name
  */
 const sendWelcomeTemplate = async (to, customerName, overridePhoneNumberId) => {
+  // 1. Try with customerName variable (if template has {{1}})
   let res = await sendTemplateMessage(
     to,
     "wms_welcome",
@@ -273,6 +274,32 @@ const sendWelcomeTemplate = async (to, customerName, overridePhoneNumberId) => {
     "en",
     overridePhoneNumberId
   );
+
+  // 2. If failed due to template/parameter mismatch, retry without parameters (if template has no {{1}})
+  if (!res.success) {
+    const errStr = JSON.stringify(res.error || "");
+    if (
+      errStr.includes("132001") ||
+      errStr.includes("132000") ||
+      errStr.toLowerCase().includes("does not exist") ||
+      errStr.toLowerCase().includes("param")
+    ) {
+      console.log(
+        "🔄 Retrying 'wms_welcome' without body parameters (in case template was created as static text)..."
+      );
+      const noParamRes = await sendTemplateMessage(
+        to,
+        "wms_welcome",
+        [],
+        "en",
+        overridePhoneNumberId
+      );
+      if (noParamRes.success) return noParamRes;
+      res = noParamRes;
+    }
+  }
+
+  // 3. If still unavailable, fallback to hello_world template
   if (!res.success) {
     const errStr = JSON.stringify(res.error || "");
     if (
