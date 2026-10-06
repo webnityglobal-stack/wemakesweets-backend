@@ -25,7 +25,8 @@ app.use(
       "https://darkslategray-horse-285328.hostingersite.com",
       "https://salmon-coyote-671066.hostingersite.com",
       "https://wemakesweets.com",
-      "https://www.wemakesweets.com"
+      "https://www.wemakesweets.com",
+      "goldenrod-vulture-201424.hostingersite.com"
     ],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
