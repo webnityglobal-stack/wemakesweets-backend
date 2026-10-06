@@ -26,7 +26,7 @@ app.use(
       "https://salmon-coyote-671066.hostingersite.com",
       "https://wemakesweets.com",
       "https://www.wemakesweets.com",
-      "goldenrod-vulture-201424.hostingersite.com"
+      "https://goldenrod-vulture-201424.hostingersite.com"
     ],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
