@@ -229,22 +229,28 @@ const sendTemplateMessage = async (
     },
   });
 
-  // Try with preferred language (e.g. "en")
-  let result = await callWhatsappApi(buildPayload(languageCode), overridePhoneNumberId);
+  const englishVariants = ["en", "en_US", "en_GB"];
+  const candidateCodes = englishVariants.includes(languageCode)
+    ? [languageCode, ...englishVariants.filter((c) => c !== languageCode)]
+    : [languageCode];
 
-  // If failed due to language translation mismatch (Error 132001 or language mismatch), retry with alternate
-  const errStr = JSON.stringify(result.error || "");
-  if (
-    !result.success &&
-    (errStr.includes("132001") ||
+  let result = null;
+  for (const code of candidateCodes) {
+    result = await callWhatsappApi(buildPayload(code), overridePhoneNumberId);
+    if (result.success) {
+      return result;
+    }
+    const errStr = JSON.stringify(result.error || "");
+    const isLangError =
+      errStr.includes("132001") ||
       errStr.toLowerCase().includes("language") ||
-      errStr.toLowerCase().includes("does not exist"))
-  ) {
-    const alternateCode = languageCode === "en" ? "en_US" : "en";
+      errStr.toLowerCase().includes("does not exist");
+    if (!isLangError) {
+      break;
+    }
     console.log(
-      `🔄 Retrying template '${templateName}' with alternate language code: '${alternateCode}'...`
+      `🔄 Template '${templateName}' not found in '${code}', trying alternate code...`
     );
-    result = await callWhatsappApi(buildPayload(alternateCode), overridePhoneNumberId);
   }
 
   return result;
