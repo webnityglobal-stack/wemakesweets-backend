@@ -270,7 +270,11 @@ const buildShiprocketOrderPayload = (
   const address =
     order.shippingAddress || {};
 
-  const phone = normalizePhone(address.phone || order.user?.phone || "");
+  const phone = normalizePhone(
+    address.phone ||
+    order.user?.phone ||
+    ""
+  );
 
   const shiprocketItems = order.items
     .filter(
@@ -281,7 +285,9 @@ const buildShiprocketOrderPayload = (
     )
     .map((item) => ({
       name: item.name,
-      sku: item.sku || item.product?.toString(),
+      sku:
+        item.sku ||
+        item.product?.toString(),
       units: Number(item.quantity),
       selling_price: Number(item.price),
     }));
@@ -297,39 +303,91 @@ const buildShiprocketOrderPayload = (
       String(item.variantId) !== "9999999999"
   );
 
-  // Total weight = item weight × quantity
-  const totalPackageWeight = shippableItems.reduce(
-    (total, item) => {
-      const weight = Number(item.weight || 0);
-      const quantity = Number(item.quantity || 1);
+  if (!shippableItems.length) {
+    throw new Error(
+      `No shippable items found for order ${order.orderId}`
+    );
+  }
 
-      return total + weight * quantity;
-    },
-    0
-  );
+  // =================================================
+  // WEIGHT
+  // KEEPING YOUR EXISTING WEIGHT LOGIC SAME
+  // =================================================
 
-  // For now, dimensions are taken from the first shippable item.
-  // This is safe for single-product orders.
-  // Multi-product packing rule will be handled separately.
-  const firstPackageItem = shippableItems[0];
+  const totalPackageWeight =
+    shippableItems.reduce(
+      (total, item) => {
+        const weight = Number(
+          item.weight || 0
+        );
+
+        const quantity = Number(
+          item.quantity || 1
+        );
+
+        return (
+          total +
+          weight * quantity
+        );
+      },
+      0
+    );
+
+  // =================================================
+  // DIMENSIONS
+  // TAKE FROM ORDER ITEM
+  // =================================================
+
+  const firstPackageItem =
+    shippableItems[0];
 
   const packageLength = Number(
-    firstPackageItem?.length ||
-    process.env.SHIPROCKET_PACKAGE_LENGTH ||
-    20
+    firstPackageItem.length
   );
 
   const packageBreadth = Number(
-    firstPackageItem?.breadth ||
-    process.env.SHIPROCKET_PACKAGE_BREADTH ||
-    15
+    firstPackageItem.breadth
   );
 
   const packageHeight = Number(
-    firstPackageItem?.height ||
-    process.env.SHIPROCKET_PACKAGE_HEIGHT ||
-    10
+    firstPackageItem.height
   );
+
+  // =================================================
+  // VALIDATE DIMENSIONS
+  // =================================================
+
+  if (
+    !Number.isFinite(packageLength) ||
+    packageLength <= 0
+  ) {
+    throw new Error(
+      `Invalid package length for order ${order.orderId}`
+    );
+  }
+
+  if (
+    !Number.isFinite(packageBreadth) ||
+    packageBreadth <= 0
+  ) {
+    throw new Error(
+      `Invalid package breadth for order ${order.orderId}`
+    );
+  }
+
+  if (
+    !Number.isFinite(packageHeight) ||
+    packageHeight <= 0
+  ) {
+    throw new Error(
+      `Invalid package height for order ${order.orderId}`
+    );
+  }
+
+  // =================================================
+  // WEIGHT
+  // KEEPING YOUR EXISTING LOGIC
+  // =================================================
 
   const packageWeight = Number(
     totalPackageWeight ||
@@ -337,14 +395,51 @@ const buildShiprocketOrderPayload = (
     0.5
   );
 
-  console.log("========================================");
-  console.log("SHIPROCKET PACKAGE DETAILS");
-  console.log("Order:", order.orderId);
-  console.log("Length:", packageLength);
-  console.log("Breadth:", packageBreadth);
-  console.log("Height:", packageHeight);
-  console.log("Weight:", packageWeight);
-  console.log("========================================");
+  // =================================================
+  // DEBUG
+  // =================================================
+
+  console.log(
+    "========================================"
+  );
+
+  console.log(
+    "SHIPROCKET PACKAGE DETAILS"
+  );
+
+  console.log(
+    "Order:",
+    order.orderId
+  );
+
+  console.log(
+    "First Package Item:",
+    firstPackageItem?.name
+  );
+
+  console.log(
+    "Weight:",
+    packageWeight
+  );
+
+  console.log(
+    "Length:",
+    packageLength
+  );
+
+  console.log(
+    "Breadth:",
+    packageBreadth
+  );
+
+  console.log(
+    "Height:",
+    packageHeight
+  );
+
+  console.log(
+    "========================================"
+  );
 
   const isCOD =
     String(paymentMethod || "")
@@ -462,7 +557,9 @@ const buildShiprocketOrderPayload = (
     // =================================================
 
     shipping_charges:
-      Number(order.shippingCharge || 0),
+      Number(
+        order.shippingCharge || 0
+      ),
 
     giftwrap_charges:
       0,
@@ -482,14 +579,17 @@ const buildShiprocketOrderPayload = (
     // PACKAGE
     // =================================================
 
-    length: packageLength,
+    length:
+      packageLength,
 
-    breadth: packageBreadth,
+    breadth:
+      packageBreadth,
 
-    height: packageHeight,
+    height:
+      packageHeight,
 
-    weight: packageWeight,
-
+    weight:
+      packageWeight,
   };
 };
 
