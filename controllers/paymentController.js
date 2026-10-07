@@ -286,6 +286,66 @@ const buildShiprocketOrderPayload = (
       selling_price: Number(item.price),
     }));
 
+  // =================================================
+  // DYNAMIC PACKAGE DETAILS
+  // =================================================
+
+  const shippableItems = order.items.filter(
+    (item) =>
+      !/delivery/i.test(item.name || "") &&
+      !/shipping/i.test(item.name || "") &&
+      String(item.variantId) !== "9999999999"
+  );
+
+  // Total weight = item weight × quantity
+  const totalPackageWeight = shippableItems.reduce(
+    (total, item) => {
+      const weight = Number(item.weight || 0);
+      const quantity = Number(item.quantity || 1);
+
+      return total + weight * quantity;
+    },
+    0
+  );
+
+  // For now, dimensions are taken from the first shippable item.
+  // This is safe for single-product orders.
+  // Multi-product packing rule will be handled separately.
+  const firstPackageItem = shippableItems[0];
+
+  const packageLength = Number(
+    firstPackageItem?.length ||
+    process.env.SHIPROCKET_PACKAGE_LENGTH ||
+    20
+  );
+
+  const packageBreadth = Number(
+    firstPackageItem?.breadth ||
+    process.env.SHIPROCKET_PACKAGE_BREADTH ||
+    15
+  );
+
+  const packageHeight = Number(
+    firstPackageItem?.height ||
+    process.env.SHIPROCKET_PACKAGE_HEIGHT ||
+    10
+  );
+
+  const packageWeight = Number(
+    totalPackageWeight ||
+    process.env.SHIPROCKET_PACKAGE_WEIGHT ||
+    0.5
+  );
+
+  console.log("========================================");
+  console.log("SHIPROCKET PACKAGE DETAILS");
+  console.log("Order:", order.orderId);
+  console.log("Length:", packageLength);
+  console.log("Breadth:", packageBreadth);
+  console.log("Height:", packageHeight);
+  console.log("Weight:", packageWeight);
+  console.log("========================================");
+
   const isCOD =
     String(paymentMethod || "")
       .trim()
@@ -422,29 +482,14 @@ const buildShiprocketOrderPayload = (
     // PACKAGE
     // =================================================
 
-    length:
-      Number(
-        process.env
-          .SHIPROCKET_PACKAGE_LENGTH
-      ) || 20,
+    length: packageLength,
 
-    breadth:
-      Number(
-        process.env
-          .SHIPROCKET_PACKAGE_BREADTH
-      ) || 15,
+    breadth: packageBreadth,
 
-    height:
-      Number(
-        process.env
-          .SHIPROCKET_PACKAGE_HEIGHT
-      ) || 10,
+    height: packageHeight,
 
-    weight:
-      Number(
-        process.env
-          .SHIPROCKET_PACKAGE_WEIGHT
-      ) || 0.5,
+    weight: packageWeight,
+
   };
 };
 
@@ -649,9 +694,9 @@ const createPayment = async (
 
     if (
       order.paymentMethod ===
-        "ONLINE" &&
+      "ONLINE" &&
       order.paymentStatus ===
-        "PAID"
+      "PAID"
     ) {
       return res.status(400).json({
         success: false,
@@ -831,16 +876,16 @@ const createPayment = async (
       order.shippingCharge !== undefined && order.shippingCharge !== null
         ? order.shippingCharge
         : order.totalAmount && order.items?.length
-        ? Math.max(
+          ? Math.max(
             0,
             order.totalAmount -
-              order.items.reduce(
-                (acc, it) =>
-                  acc + (Number(it.price) * Number(it.quantity) || 0),
-                0
-              )
+            order.items.reduce(
+              (acc, it) =>
+                acc + (Number(it.price) * Number(it.quantity) || 0),
+              0
+            )
           )
-        : 0
+          : 0
     );
 
     if (deliveryCharge > 0) {
@@ -990,8 +1035,8 @@ const createPayment = async (
     payment.gatewayOrderId =
       gatewayOrderId
         ? String(
-            gatewayOrderId
-          )
+          gatewayOrderId
+        )
         : null;
 
     payment.gatewayResponse =
@@ -1542,12 +1587,12 @@ const fastrrWebhook = async (
 
     const receivedApiKey =
       req.headers[
-        "x-api-key"
+      "x-api-key"
       ];
 
     const receivedHmac =
       req.headers[
-        "x-api-hmac-sha256"
+      "x-api-hmac-sha256"
       ];
 
     const requireWebhookHmac =
@@ -1563,7 +1608,7 @@ const fastrrWebhook = async (
       if (
         !receivedApiKey ||
         receivedApiKey !==
-          process.env.FASTRR_API_KEY
+        process.env.FASTRR_API_KEY
       ) {
         return res.status(401).json({
           success: false,
@@ -1614,7 +1659,7 @@ const fastrrWebhook = async (
       if (
         receivedApiKey &&
         receivedApiKey !==
-          process.env.FASTRR_API_KEY
+        process.env.FASTRR_API_KEY
       ) {
         return res.status(401).json({
           success: false,

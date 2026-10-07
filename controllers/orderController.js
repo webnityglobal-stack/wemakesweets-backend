@@ -225,11 +225,11 @@ const createOrder = async (req, res) => {
       const price =
         variant
           ? Number(
-              variant.salePrice
-            )
+            variant.salePrice
+          )
           : Number(
-              product.salePrice
-            );
+            product.salePrice
+          );
 
       if (
         !Number.isFinite(
@@ -259,30 +259,40 @@ const createOrder = async (req, res) => {
       // -----------------------------------------------
 
       orderItems.push({
-        product:
-          product._id,
+        product: product._id,
+        variantId: variant ? variant._id : null,
 
-        variantId:
-          variant
-            ? variant._id
-            : null,
+        name: variant
+          ? `${product.name} - ${variant.title}`
+          : product.name,
 
-        name:
-          variant
-            ? `${product.name} - ${variant.title}`
-            : product.name,
-
-        sku:
-          variant
-            ? variant.sku
-            : product._id.toString(),
+        sku: variant
+          ? variant.sku
+          : product._id.toString(),
 
         quantity,
-
         price,
+        total: itemTotal,
 
-        total:
-          itemTotal,
+        // =================================================
+        // SHIPPING PACKAGE DETAILS
+        // =================================================
+
+        weight: variant
+          ? Number(variant.weight)
+          : 0,
+
+        length: variant
+          ? Number(variant.length)
+          : 0,
+
+        breadth: variant
+          ? Number(variant.breadth)
+          : 0,
+
+        height: variant
+          ? Number(variant.height)
+          : 0,
       });
     }
 
@@ -298,8 +308,8 @@ const createOrder = async (req, res) => {
       req.body.shippingCharge !== undefined
         ? Math.max(0, Number(req.body.shippingCharge) || 0)
         : subtotal >= 350 || subtotal === 0
-        ? 0
-        : 49;
+          ? 0
+          : 49;
 
     const finalTotalAmount = subtotal + shippingCharge;
 

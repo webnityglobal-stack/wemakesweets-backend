@@ -55,6 +55,23 @@ const variantSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    length: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+
+    breadth: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+
+    height: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
     weight: {
       type: Number,
       required: true,

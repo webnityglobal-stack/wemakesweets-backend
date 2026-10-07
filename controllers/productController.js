@@ -50,6 +50,10 @@ const normalizeVariants = (
       parseNumber(productWeight)
     );
 
+    const length = parseNumber(variant.length);
+    const breadth = parseNumber(variant.breadth);
+    const height = parseNumber(variant.height);
+
     // ===============================================
     // SALE PRICE
     // ===============================================
@@ -88,9 +92,27 @@ const normalizeVariants = (
     // VALIDATION
     // ===============================================
 
-    if (weight === null) {
+    if (weight === null || weight < 0) {
       throw new Error(
-        `Variant ${index + 1} weight is required`
+        `Invalid weight for variant ${index + 1}: ${variant.title || "Unknown"}`
+      );
+    }
+
+    if (length === null || length < 0) {
+      throw new Error(
+        `Invalid length for variant ${index + 1}: ${variant.title || "Unknown"}`
+      );
+    }
+
+    if (breadth === null || breadth < 0) {
+      throw new Error(
+        `Invalid breadth for variant ${index + 1}: ${variant.title || "Unknown"}`
+      );
+    }
+
+    if (height === null || height < 0) {
+      throw new Error(
+        `Invalid height for variant ${index + 1}: ${variant.title || "Unknown"}`
       );
     }
 
@@ -119,6 +141,10 @@ const normalizeVariants = (
         variant.title || "",
 
       weight,
+      length,
+
+      breadth,
+      height,
 
       salePrice,
 
