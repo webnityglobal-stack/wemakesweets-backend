@@ -42,140 +42,111 @@ const normalizeVariants = (variants) => {
   }
 
   return variants.map((variant, index) => {
-
-    // =================================================
-    // SHIPPING DETAILS
-    // =================================================
-
     const weight = parseNumber(variant.weight);
     const length = parseNumber(variant.length);
     const breadth = parseNumber(variant.breadth);
     const height = parseNumber(variant.height);
 
-    // =================================================
-    // SALE PRICE
-    // =================================================
+    const salePrice = parseNumber(variant.salePrice);
+    const mrp = parseNumber(variant.mrp);
+    const stock = parseNumber(variant.stock, 0);
+    const shiprocketId = parseNumber(variant.shiprocketId);
 
-    const salePrice = parseNumber(
-      variant.salePrice
-    );
-
-    // =================================================
-    // MRP
-    // =================================================
-
-    const mrp = parseNumber(
-      variant.mrp
-    );
-
-    // =================================================
-    // STOCK
-    // =================================================
-
-    const stock = parseNumber(
-      variant.stock,
-      0
-    );
-
-    // =================================================
-    // SHIPROCKET ID
-    // =================================================
-
-    const shiprocketId = parseNumber(
-      variant.shiprocketId
-    );
-
-    // =================================================
-    // VALIDATE WEIGHT
-    // =================================================
+    // ==========================================
+    // REQUIRED SHIPPING DETAILS
+    // ==========================================
 
     if (weight === null || weight <= 0) {
       throw new Error(
-        `Weight is required for variant ${index + 1
+        `Weight is required for variant ${
+          index + 1
         }: ${variant.title || "Unknown"}`
       );
     }
-
-    // =================================================
-    // VALIDATE LENGTH
-    // =================================================
 
     if (length === null || length <= 0) {
       throw new Error(
-        `Length is required for variant ${index + 1
+        `Length is required for variant ${
+          index + 1
         }: ${variant.title || "Unknown"}`
       );
     }
-
-    // =================================================
-    // VALIDATE BREADTH
-    // =================================================
 
     if (breadth === null || breadth <= 0) {
       throw new Error(
-        `Breadth is required for variant ${index + 1
+        `Breadth is required for variant ${
+          index + 1
         }: ${variant.title || "Unknown"}`
       );
     }
-
-    // =================================================
-    // VALIDATE HEIGHT
-    // =================================================
 
     if (height === null || height <= 0) {
       throw new Error(
-        `Height is required for variant ${index + 1
+        `Height is required for variant ${
+          index + 1
         }: ${variant.title || "Unknown"}`
       );
     }
 
-    // =================================================
-    // VALIDATE SALE PRICE
-    // =================================================
+    // ==========================================
+    // PRICE VALIDATION
+    // ==========================================
 
     if (salePrice === null || salePrice < 0) {
       throw new Error(
-        `Sale price is required for variant ${index + 1
+        `Sale price is required for variant ${
+          index + 1
         }: ${variant.title || "Unknown"}`
       );
     }
-
-    // =================================================
-    // VALIDATE MRP
-    // =================================================
 
     if (mrp === null || mrp < 0) {
       throw new Error(
-        `MRP is required for variant ${index + 1
+        `MRP is required for variant ${
+          index + 1
         }: ${variant.title || "Unknown"}`
       );
     }
 
-    // =================================================
-    // VALIDATE STOCK
-    // =================================================
+    // ==========================================
+    // STOCK
+    // ==========================================
 
     if (stock === null || stock < 0) {
       throw new Error(
-        `Invalid stock for variant ${index + 1
+        `Invalid stock for variant ${
+          index + 1
         }: ${variant.title || "Unknown"}`
       );
     }
 
-    // =================================================
-    // VALIDATE SHIPROCKET ID
-    // =================================================
+    // ==========================================
+    // SHIPROCKET ID
+    // ==========================================
 
     if (shiprocketId === null) {
       throw new Error(
-        `Shiprocket ID is required for variant ${index + 1
+        `Shiprocket ID is required for variant ${
+          index + 1
         }: ${variant.title || "Unknown"}`
       );
     }
 
-    // =================================================
-    // RETURN NORMALIZED VARIANT
-    // =================================================
+    // ==========================================
+    // SKU
+    // ==========================================
+
+    if (!variant.sku || !String(variant.sku).trim()) {
+      throw new Error(
+        `SKU is required for variant ${
+          index + 1
+        }: ${variant.title || "Unknown"}`
+      );
+    }
+
+    // ==========================================
+    // RETURN
+    // ==========================================
 
     return {
       shiprocketId,
@@ -193,8 +164,7 @@ const normalizeVariants = (variants) => {
       mrp,
       stock,
 
-      sku:
-        variant.sku?.trim() || "",
+      sku: variant.sku.trim(),
     };
   });
 };
