@@ -399,53 +399,74 @@ const addProduct = async (
     let parsedCoupons = [];
 
     try {
-      if (
-        ingredients !== undefined
-      ) {
-        parsedIngredients =
-          JSON.parse(
-            ingredients
-          );
-      }
-
-      if (
-        nutrition !== undefined
-      ) {
-        parsedNutrition =
-          JSON.parse(
-            nutrition
-          );
-      }
-
-      if (
-        variants !== undefined
-      ) {
-        parsedVariants =
-          JSON.parse(
-            variants
-          );
-      }
-
-      if (
-        coupons !== undefined
-      ) {
-        parsedCoupons =
-          JSON.parse(
-            coupons
-          );
-      }
-    } catch (parseError) {
-      console.error(
-        "JSON Parse Error:",
-        parseError
-      );
-
+  if (ingredients !== undefined && ingredients !== "") {
+    try {
+      parsedIngredients =
+        typeof ingredients === "string"
+          ? JSON.parse(ingredients)
+          : ingredients;
+    } catch (error) {
       return res.status(400).json({
         success: false,
-        message:
-          "Invalid JSON format in ingredients, nutrition, variants or coupons",
+        message: "Invalid ingredients JSON format",
+        error: error.message,
       });
     }
+  }
+
+  if (nutrition !== undefined && nutrition !== "") {
+    try {
+      parsedNutrition =
+        typeof nutrition === "string"
+          ? JSON.parse(nutrition)
+          : nutrition;
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid nutrition JSON format",
+        error: error.message,
+      });
+    }
+  }
+
+  if (variants !== undefined && variants !== "") {
+    try {
+      parsedVariants =
+        typeof variants === "string"
+          ? JSON.parse(variants)
+          : variants;
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid variants JSON format",
+        error: error.message,
+      });
+    }
+  }
+
+  if (coupons !== undefined && coupons !== "") {
+    try {
+      parsedCoupons =
+        typeof coupons === "string"
+          ? JSON.parse(coupons)
+          : coupons;
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid coupons JSON format",
+        error: error.message,
+      });
+    }
+  }
+} catch (error) {
+  console.error("JSON Parse Error:", error);
+
+  return res.status(400).json({
+    success: false,
+    message: "Invalid JSON data",
+    error: error.message,
+  });
+}
 
     // =================================================
     // NORMALIZE VARIANTS
