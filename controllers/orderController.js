@@ -537,6 +537,34 @@ const getMyOrders = async (
           createdAt: -1,
         });
 
+    // Auto-sync active orders with FastRR (if pending online payments or missing shiprocket order)
+    const pendingFastrrOrders = orders.filter(
+      (o) =>
+        (o.paymentMethod === "ONLINE" && o.paymentStatus === "PROCESSING") ||
+        (o.orderStatus === "CONFIRMED" && !o.shiprocket?.orderId)
+    );
+
+    if (pendingFastrrOrders.length > 0) {
+      try {
+        const { syncFastrrOrder, isPaymentSuccessful } = require("./paymentController");
+        for (const o of pendingFastrrOrders) {
+          const payment = await Payment.findOne({ order: o._id });
+          if (payment && payment.gatewayOrderId) {
+            try {
+              const checkoutDetails = await fetchFastRROrderDetails(
+                String(payment.gatewayOrderId)
+              );
+              if (isPaymentSuccessful(null, checkoutDetails, null)) {
+                await syncFastrrOrder(o, payment, checkoutDetails, null);
+              }
+            } catch (_) {}
+          }
+        }
+      } catch (fastrrSyncErr) {
+        console.warn("Could not auto-sync FastRR in getMyOrders:", fastrrSyncErr.message);
+      }
+    }
+
     // Auto-sync active orders with Shiprocket (if cancelled or updated on Shiprocket)
     const activeOrders = orders.filter(
       (o) =>
@@ -639,18 +667,40 @@ const getOrderById = async (
       try {
         const payment = await Payment.findOne({ order: order._id });
         if (payment && payment.gatewayOrderId) {
-          const checkoutDetails = await fetchFastRROrderDetails(
+          const { syncFastrrOrder, isPaymentSuccessful } = require("./paymentController");
+          let checkoutDetails = await fetchFastRROrderDetails(
             String(payment.gatewayOrderId)
           );
-          const status = String(
+
+          let isSuccess = isPaymentSuccessful(null, checkoutDetails, null);
+
+          // If still INITIATED / PROCESSING and this is ONLINE payment, wait 2s and retry once
+          // (card 3DS payment settlements typically take 1-2 seconds after bank OTP redirect)
+          const cdStatus = String(
             checkoutDetails?.result?.status || checkoutDetails?.status || ""
           ).toUpperCase();
 
-          if (status === "SUCCESS") {
-            const { syncFastrrOrder } = require("./paymentController");
+          if (
+            !isSuccess &&
+            order.paymentMethod === "ONLINE" &&
+            (cdStatus === "INITIATED" || cdStatus === "PROCESSING" || cdStatus === "")
+          ) {
+            console.log(
+              `[Order Sync] Order ${order.orderId} in FastRR is ${cdStatus}, waiting 2s for 3DS settlement...`
+            );
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            try {
+              checkoutDetails = await fetchFastRROrderDetails(
+                String(payment.gatewayOrderId)
+              );
+              isSuccess = isPaymentSuccessful(null, checkoutDetails, null);
+            } catch (_) {}
+          }
+
+          if (isSuccess) {
             await syncFastrrOrder(order, payment, checkoutDetails, null);
             const syncedOrder = await Order.findById(order._id)
-              .populate("items.product", "name price images sku")
+              .populate("items.product", "name salePrice images sku variants")
               .populate("paymentId");
             if (syncedOrder) {
               return res.status(200).json({
