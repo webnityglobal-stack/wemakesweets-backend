@@ -2,12 +2,13 @@ const path = require("path");
 const fs = require("fs");
 
 /**
- * Base root directory for all uploaded media files.
+ * Finds the true persistent uploads_storage folder on Hostinger / Linux / local.
  * Priority:
- * 1. process.env.UPLOAD_DIR (explicit environment variable)
- * 2. Hostinger user persistent folder: /home/u169575383/uploads_storage
- * 3. Dynamic search for /home/<user>/uploads_storage on Linux
- * 4. Local fallback: <project-root>/uploads
+ * 1. process.env.UPLOAD_DIR
+ * 2. Specific Hostinger domain storage: /home/u169575383/domains/salmon-coyote-671066.hostingersite.com/uploads_storage
+ * 3. Walk up directory tree from __dirname & process.cwd() outside hbuilds versions
+ * 4. Scan /home/*/domains/*/uploads_storage
+ * 5. Local fallback: <project-root>/uploads
  */
 let cachedUploadRootDir = null;
 
@@ -16,54 +17,69 @@ const getUploadRootDir = () => {
     return cachedUploadRootDir;
   }
 
-  // 1. Explicit environment variable
+  // 1. Explicit env variable
   if (process.env.UPLOAD_DIR) {
     const custom = path.resolve(process.env.UPLOAD_DIR);
     if (!fs.existsSync(custom)) {
       try {
         fs.mkdirSync(custom, { recursive: true });
-      } catch (err) {
-        console.warn("⚠️ Failed to create custom upload dir:", err.message);
-      }
+      } catch (e) {}
     }
     cachedUploadRootDir = custom;
     return custom;
   }
 
-  // 2. Direct Hostinger persistent directory created by user in File Manager
-  const hostingerPath = "/home/u169575383/uploads_storage";
-  if (fs.existsSync(hostingerPath)) {
-    cachedUploadRootDir = hostingerPath;
-    return hostingerPath;
+  // 2. Specific Hostinger domain persistent folder created by user
+  const hostingerDomainPath =
+    "/home/u169575383/domains/salmon-coyote-671066.hostingersite.com/uploads_storage";
+  if (fs.existsSync(hostingerDomainPath)) {
+    cachedUploadRootDir = hostingerDomainPath;
+    return hostingerDomainPath;
   }
 
-  // 3. Dynamic search for /home/*/uploads_storage on Linux
+  // 3. Walk up from __dirname and process.cwd() looking for uploads_storage outside hbuilds versions
+  const startingPoints = [__dirname, process.cwd()];
+  for (const start of startingPoints) {
+    let curr = start;
+    for (let i = 0; i < 8; i++) {
+      if (!curr || curr === "/" || curr === ".") break;
+      const candidate = path.join(curr, "uploads_storage");
+      if (fs.existsSync(candidate) && !candidate.includes("/versions/")) {
+        cachedUploadRootDir = candidate;
+        return candidate;
+      }
+      curr = path.dirname(curr);
+    }
+  }
+
+  // 4. Dynamic search across /home/*/domains/*/uploads_storage
   if (process.platform === "linux") {
     try {
       const homeRoot = "/home";
       if (fs.existsSync(homeRoot)) {
-        const users = fs.readdirSync(homeRoot);
-        for (const u of users) {
-          const candidate = path.join(homeRoot, u, "uploads_storage");
-          if (fs.existsSync(candidate)) {
-            cachedUploadRootDir = candidate;
-            return candidate;
+        for (const u of fs.readdirSync(homeRoot)) {
+          const domRoot = path.join(homeRoot, u, "domains");
+          if (fs.existsSync(domRoot)) {
+            for (const d of fs.readdirSync(domRoot)) {
+              const candidate = path.join(domRoot, d, "uploads_storage");
+              if (fs.existsSync(candidate)) {
+                cachedUploadRootDir = candidate;
+                return candidate;
+              }
+            }
           }
         }
       }
-    } catch (err) {}
+    } catch (e) {}
   }
 
-  // 4. Default fallback: project uploads folder
+  // 5. Local fallback
   const fallback = path.join(__dirname, "../uploads");
   if (!fs.existsSync(fallback)) {
     try {
       fs.mkdirSync(fallback, { recursive: true });
-    } catch (err) {
-      console.warn("⚠️ Failed to create fallback upload dir:", err.message);
-    }
+    } catch (e) {}
   }
-
   cachedUploadRootDir = fallback;
   return fallback;
 };

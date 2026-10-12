@@ -121,13 +121,10 @@ app.get("/api/debug-storage", (req, res) => {
     cwd: process.cwd(),
     dirname: __dirname,
     activeUploadsRoot: getUploadRootDir(),
-    cwdListing: safeReaddir(process.cwd()),
-    parentListing: safeReaddir(path.join(process.cwd(), "..")),
-    grandParentListing: safeReaddir(path.join(process.cwd(), "../..")),
-    greatGrandParentListing: safeReaddir(path.join(process.cwd(), "../../..")),
-    homeListing: safeReaddir("/home"),
-    userListing: safeReaddir("/home/u169575383"),
-    existsHostingerStorage: fs.existsSync("/home/u169575383/uploads_storage"),
+    domainPath: "/home/u169575383/domains/salmon-coyote-671066.hostingersite.com",
+    domainListing: safeReaddir("/home/u169575383/domains/salmon-coyote-671066.hostingersite.com"),
+    uploadsStorageListing: safeReaddir("/home/u169575383/domains/salmon-coyote-671066.hostingersite.com/uploads_storage"),
+    existsDomainStorage: fs.existsSync("/home/u169575383/domains/salmon-coyote-671066.hostingersite.com/uploads_storage"),
   });
 });
 
