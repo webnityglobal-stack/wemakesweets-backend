@@ -194,13 +194,16 @@ const sendInteractiveButtons = async (to, bodyText, buttons = [], overridePhoneN
  * @param {string} templateName - Approved template name
  * @param {Array<string>} bodyParameters - Array of text parameter strings for {{1}}, {{2}}, etc.
  * @param {string} languageCode - Preferred language code (default 'en')
+ * @param {string} overridePhoneNumberId - Optional phone number ID override
+ * @param {Array<Object>} buttonComponents - Optional button components (e.g. for dynamic URL buttons)
  */
 const sendTemplateMessage = async (
   to,
   templateName,
   bodyParameters = [],
   languageCode = "en",
-  overridePhoneNumberId
+  overridePhoneNumberId,
+  buttonComponents = []
 ) => {
   const formattedPhone = formatPhoneNumber(to);
   if (!formattedPhone) return { success: false, error: "Invalid phone number" };
@@ -215,6 +218,10 @@ const sendTemplateMessage = async (
         text: String(param || ""),
       })),
     });
+  }
+
+  if (buttonComponents && buttonComponents.length > 0) {
+    components.push(...buttonComponents);
   }
 
   const buildPayload = (lang) => ({
@@ -393,9 +400,81 @@ const sendWelcomeNotification = async (to, customerName, overridePhoneNumberId) 
  * 2. Login OTP
  * Template: wms_login_otp
  * {{1}} = OTP
+ * In Meta Cloud API, wms_login_otp is an AUTHENTICATION template with:
+ * - Body: *{{1}}* is your verification code...
+ * - Dynamic URL "Copy code" button at index 0: requires URL suffix parameter {{1}}
  */
 const sendLoginOtpTemplate = async (to, otp) => {
-  return await sendTemplateMessage(to, "wms_login_otp", [otp], "en");
+  const otpStr = String(otp || "").trim();
+
+  // Primary attempt: Include button parameter for dynamic URL button at index 0
+  const buttonComponents = [
+    {
+      type: "button",
+      sub_type: "url",
+      index: "0",
+      parameters: [
+        {
+          type: "text",
+          text: otpStr,
+        },
+      ],
+    },
+  ];
+
+  let res = await sendTemplateMessage(
+    to,
+    "wms_login_otp",
+    [otpStr],
+    "en",
+    undefined,
+    buttonComponents
+  );
+
+  if (res.success) {
+    return res;
+  }
+
+  const errStr = JSON.stringify(res.error || "");
+  console.warn("⚠️ [WhatsApp OTP Template] Attempt with string index '0' failed:", errStr);
+
+  // If failed with button/parameter error, retry with numeric index 0
+  if (errStr.includes("button") || errStr.includes("131008")) {
+    const numIndexButton = [
+      {
+        type: "button",
+        sub_type: "url",
+        index: 0,
+        parameters: [
+          {
+            type: "text",
+            text: otpStr,
+          },
+        ],
+      },
+    ];
+
+    const retryNumeric = await sendTemplateMessage(
+      to,
+      "wms_login_otp",
+      [otpStr],
+      "en",
+      undefined,
+      numIndexButton
+    );
+    if (retryNumeric.success) return retryNumeric;
+
+    // Also retry without button in case the template was modified in Meta
+    const retryNoButton = await sendTemplateMessage(
+      to,
+      "wms_login_otp",
+      [otpStr],
+      "en"
+    );
+    if (retryNoButton.success) return retryNoButton;
+  }
+
+  return res;
 };
 
 /**

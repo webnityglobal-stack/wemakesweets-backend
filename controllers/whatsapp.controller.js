@@ -3,7 +3,6 @@ const mongoose = require("mongoose");
 const {
   sendTextMessage,
   sendInteractiveButtons,
-  sendWelcomeTemplate,
   setActivePhoneNumberId,
   getActiveProductionPhoneId,
 } = require("../services/whatsappService");
@@ -398,7 +397,7 @@ const handleWebhook = async (req, res) => {
                 JSON.stringify(status.errors, null, 2)
               );
 
-              // Auto-Recovery for Error 131047 (Re-engagement message / >24 hours passed)
+              // Log for Error 131047 (Re-engagement message / >24 hours passed)
               const is24HrError = status.errors.some(
                 (err) =>
                   err.code === 131047 ||
@@ -406,13 +405,8 @@ const handleWebhook = async (req, res) => {
               );
 
               if (is24HrError) {
-                console.log(
-                  `🔄 [Auto-Recovery] Detected Error 131047 for ${status.recipient_id}. Sending approved welcome template to re-establish session...`
-                );
-                await sendWelcomeTemplate(
-                  status.recipient_id,
-                  "Valued Customer",
-                  receivingPhoneId
+                console.warn(
+                  `⚠️ [WhatsApp Webhook] Message to ${status.recipient_id} failed because customer service 24-hr window has expired (Error 131047).`
                 );
               }
             }
