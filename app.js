@@ -104,30 +104,6 @@ app.get("/", (req, res) => {
   );
 });
 
-app.get("/api/debug-storage", (req, res) => {
-  const fs = require("fs");
-  const path = require("path");
-  const { getUploadRootDir } = require("./config/storage");
-
-  const safeReaddir = (dir) => {
-    try {
-      return fs.readdirSync(dir);
-    } catch (e) {
-      return `Error: ${e.message}`;
-    }
-  };
-
-  res.json({
-    cwd: process.cwd(),
-    dirname: __dirname,
-    activeUploadsRoot: getUploadRootDir(),
-    domainPath: "/home/u169575383/domains/salmon-coyote-671066.hostingersite.com",
-    domainListing: safeReaddir("/home/u169575383/domains/salmon-coyote-671066.hostingersite.com"),
-    uploadsStorageListing: safeReaddir("/home/u169575383/domains/salmon-coyote-671066.hostingersite.com/uploads_storage"),
-    existsDomainStorage: fs.existsSync("/home/u169575383/domains/salmon-coyote-671066.hostingersite.com/uploads_storage"),
-  });
-});
-
 
 // ====================================================
 // AUTH ROUTES
