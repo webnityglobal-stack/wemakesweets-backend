@@ -59,7 +59,7 @@ const submitContact = async (req, res) => {
 
     // 2. Target recipient email: ajaysa9760@gmail.com
     const recipientEmail = (
-      process.env.CONTACT_RECEIVER_EMAIL || "ajaysa9760@gmail.com"
+      process.env.CONTACT_RECEIVER_EMAIL || "cs@wemakesweets.com"
     ).trim();
 
     const emailSubject = trimmedSubject
@@ -216,7 +216,7 @@ const submitFAQQuestion = async (req, res) => {
 
     // 2. Email to ajaysa9760@gmail.com
     const recipientEmail = (
-      process.env.CONTACT_RECEIVER_EMAIL || "ajaysa9760@gmail.com"
+      process.env.CONTACT_RECEIVER_EMAIL || "cs@wemakesweets.com"
     ).trim();
 
     const emailSubject = `[FAQ Question] ${senderName}: ${trimmedQuestion.slice(0, 50)}${trimmedQuestion.length > 50 ? "..." : ""}`;
