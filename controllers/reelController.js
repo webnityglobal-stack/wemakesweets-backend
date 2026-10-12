@@ -117,27 +117,38 @@ const getReels = async (req, res) => {
       }
     }
 
-    // 3. Format response to match exact expected schema
-    const reels = dbReels.map((r) => {
-      let finalUrl = r.url;
-      // Normalize URL if host changed or relative
-      if (
-        !finalUrl ||
-        !finalUrl.startsWith("http") ||
-        finalUrl.includes("localhost")
-      ) {
-        finalUrl = `${baseUrl}/uploads/reels/${r.filename}`;
-      }
+    // 3. Filter and clean up phantom reels whose local files were deleted or wiped from disk
+    const reels = [];
+    for (const r of dbReels) {
+      const filePath = path.join(reelsDir, r.filename);
+      const isLocal = !r.url || r.url.includes("/uploads/reels/");
 
-      return {
-        _id: r._id,
-        filename: r.filename,
-        url: finalUrl,
-        size: r.size || 0,
-        createdAt: r.createdAt,
-        updatedAt: r.updatedAt,
-      };
-    });
+      if (!isLocal || fs.existsSync(filePath)) {
+        let finalUrl = r.url;
+        if (
+          !finalUrl ||
+          !finalUrl.startsWith("http") ||
+          finalUrl.includes("localhost")
+        ) {
+          finalUrl = `${baseUrl}/uploads/reels/${r.filename}`;
+        }
+
+        reels.push({
+          _id: r._id,
+          filename: r.filename,
+          url: finalUrl,
+          size: r.size || 0,
+          createdAt: r.createdAt,
+          updatedAt: r.updatedAt,
+        });
+      } else {
+        // Physical file no longer on disk; remove phantom record so frontend never gets 404
+        try {
+          await Reel.deleteOne({ _id: r._id });
+          console.warn(`⚠️ Cleaned up phantom reel record missing from disk: ${r.filename}`);
+        } catch (cleanupErr) {}
+      }
+    }
 
     return res.status(200).json({
       success: true,
