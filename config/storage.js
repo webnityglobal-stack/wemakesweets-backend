@@ -7,8 +7,8 @@ const fs = require("fs");
  * 1. process.env.UPLOAD_DIR
  * 2. Specific Hostinger domain storage: /home/u169575383/domains/salmon-coyote-671066.hostingersite.com/uploads_storage
  * 3. Walk up directory tree from __dirname & process.cwd() outside hbuilds versions
- * 4. Scan /home/*/domains/*/uploads_storage
- * 5. Local fallback: <project-root>/uploads
+ * 4. Scan home domains uploads_storage
+ * 5. Local fallback: project-root/uploads
  */
 let cachedUploadRootDir = null;
 
