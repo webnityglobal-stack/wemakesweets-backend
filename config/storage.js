@@ -17,24 +17,26 @@ const getUploadRootDir = () => {
     return cachedUploadRootDir;
   }
 
-  // 1. Explicit env variable
-  if (process.env.UPLOAD_DIR) {
-    const custom = path.resolve(process.env.UPLOAD_DIR);
-    if (!fs.existsSync(custom)) {
-      try {
-        fs.mkdirSync(custom, { recursive: true });
-      } catch (e) {}
-    }
-    cachedUploadRootDir = custom;
-    return custom;
-  }
-
-  // 2. Specific Hostinger domain persistent folder created by user
+  // 1. Specific Hostinger domain persistent folder created by user in File Manager
   const hostingerDomainPath =
     "/home/u169575383/domains/salmon-coyote-671066.hostingersite.com/uploads_storage";
   if (fs.existsSync(hostingerDomainPath)) {
     cachedUploadRootDir = hostingerDomainPath;
     return hostingerDomainPath;
+  }
+
+  // 2. Explicit env variable (ignore relative paths resolving inside hbuilds)
+  if (process.env.UPLOAD_DIR) {
+    const custom = path.resolve(process.env.UPLOAD_DIR);
+    if (!custom.includes("/hbuilds/")) {
+      if (!fs.existsSync(custom)) {
+        try {
+          fs.mkdirSync(custom, { recursive: true });
+        } catch (e) {}
+      }
+      cachedUploadRootDir = custom;
+      return custom;
+    }
   }
 
   // 3. Walk up from __dirname and process.cwd() looking for uploads_storage outside hbuilds versions
