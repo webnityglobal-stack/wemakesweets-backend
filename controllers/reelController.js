@@ -1,17 +1,14 @@
 const fs = require("fs");
 const path = require("path");
+const { getReelsDir } = require("../config/storage");
+const Reel = require("../models/reel");
 
-// =====================================================
-// REELS DIRECTORY
-// =====================================================
-
-const reelsDir = path.join(
-  __dirname,
-  "../uploads/reels"
-);
+// Allowed video extensions
+const allowedExtensions = [".mp4", ".webm", ".mov"];
 
 // =====================================================
 // UPLOAD REELS
+// POST /api/reels/upload
 // =====================================================
 
 const uploadReel = async (req, res) => {
@@ -27,17 +24,36 @@ const uploadReel = async (req, res) => {
       process.env.BACKEND_URL ||
       `${req.protocol}://${req.get("host")}`;
 
-    const reels = req.files.map((file) => ({
-      filename: file.filename,
-      url: `${baseUrl}/uploads/reels/${file.filename}`,
-    }));
+    const savedReels = [];
+
+    for (const file of req.files) {
+      const url = `${baseUrl}/uploads/reels/${file.filename}`;
+
+      const reelDoc = await Reel.findOneAndUpdate(
+        { filename: file.filename },
+        {
+          filename: file.filename,
+          url,
+          size: file.size || 0,
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+
+      savedReels.push({
+        _id: reelDoc._id,
+        filename: file.filename,
+        url: reelDoc.url || url,
+      });
+    }
 
     return res.status(201).json({
       success: true,
       message: "Reels uploaded successfully",
-      reels,
+      reels: savedReels.map((r) => ({
+        filename: r.filename,
+        url: r.url,
+      })),
     });
-
   } catch (error) {
     console.error("REEL UPLOAD ERROR:", error);
 
@@ -55,121 +71,108 @@ const uploadReel = async (req, res) => {
 
 const getReels = async (req, res) => {
   try {
-    // Check folder
-    if (!fs.existsSync(reelsDir)) {
-      return res.status(200).json({
-        success: true,
-        message: "No reels found",
-        reels: [],
-      });
-    }
-
-    // Read all files
-    const files = fs.readdirSync(reelsDir);
-
-    // Allowed video extensions
-    const allowedExtensions = [
-      ".mp4",
-      ".webm",
-      ".mov",
-    ];
-
-    // Backend base URL
+    const reelsDir = getReelsDir();
     const baseUrl =
       process.env.BACKEND_URL ||
       `${req.protocol}://${req.get("host")}`;
 
-    // Create reel response
-    const reels = files
-      .filter((filename) => {
-        const extension = path
-          .extname(filename)
-          .toLowerCase();
+    // 1. Fetch persistent reels from MongoDB
+    let dbReels = await Reel.find().sort({ createdAt: -1 });
 
-        return allowedExtensions.includes(
-          extension
+    // 2. Backward compatibility & disk sync:
+    // If there are files on disk not yet recorded in MongoDB, sync them in
+    if (fs.existsSync(reelsDir)) {
+      try {
+        const diskFiles = fs.readdirSync(reelsDir);
+        const existingFilenames = new Set(dbReels.map((r) => r.filename));
+
+        for (const filename of diskFiles) {
+          const extension = path.extname(filename).toLowerCase();
+          if (
+            allowedExtensions.includes(extension) &&
+            !existingFilenames.has(filename)
+          ) {
+            const filePath = path.join(reelsDir, filename);
+            const stats = fs.statSync(filePath);
+
+            const syncedReel = await Reel.create({
+              filename,
+              url: `${baseUrl}/uploads/reels/${filename}`,
+              size: stats.size || 0,
+              createdAt: stats.birthtime || new Date(),
+              updatedAt: stats.mtime || new Date(),
+            });
+
+            dbReels.push(syncedReel);
+            existingFilenames.add(filename);
+          }
+        }
+
+        // Keep newest first
+        dbReels.sort(
+          (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
         );
-      })
-      .map((filename) => {
-        const filePath = path.join(
-          reelsDir,
-          filename
-        );
+      } catch (syncErr) {
+        console.warn("⚠️ Disk sync warning in getReels:", syncErr.message);
+      }
+    }
 
-        const stats =
-          fs.statSync(filePath);
+    // 3. Format response to match exact expected schema
+    const reels = dbReels.map((r) => {
+      let finalUrl = r.url;
+      // Normalize URL if host changed or relative
+      if (
+        !finalUrl ||
+        !finalUrl.startsWith("http") ||
+        finalUrl.includes("localhost")
+      ) {
+        finalUrl = `${baseUrl}/uploads/reels/${r.filename}`;
+      }
 
-        return {
-          filename,
-
-          url:
-            `${baseUrl}/uploads/reels/${filename}`,
-
-          size:
-            stats.size,
-
-          createdAt:
-            stats.birthtime,
-
-          updatedAt:
-            stats.mtime,
-        };
-      })
-      // Latest uploaded reel first
-      .sort(
-        (a, b) =>
-          new Date(b.createdAt) -
-          new Date(a.createdAt)
-      );
+      return {
+        _id: r._id,
+        filename: r.filename,
+        url: finalUrl,
+        size: r.size || 0,
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt,
+      };
+    });
 
     return res.status(200).json({
       success: true,
-
-      message:
-        "Reels fetched successfully",
-
-      count:
-        reels.length,
-
+      message: "Reels fetched successfully",
+      count: reels.length,
       reels,
     });
-
   } catch (error) {
-    console.error(
-      "GET REELS ERROR:",
-      error
-    );
+    console.error("GET REELS ERROR:", error);
 
     return res.status(500).json({
       success: false,
-
-      message:
-        "Unable to fetch reels",
-
-      error:
-        error.message,
+      message: "Unable to fetch reels",
+      error: error.message,
     });
   }
 };
 
 // =====================================================
 // DELETE REEL
+// DELETE /api/reels/:filename
 // =====================================================
 
 const deleteReel = async (req, res) => {
   try {
-    const { filename } =
-      req.params;
+    const { filename } = req.params;
 
     if (!filename) {
       return res.status(400).json({
         success: false,
-        message:
-          "Reel filename is required",
+        message: "Reel filename is required",
       });
     }
 
-    // Security
+    // Security check
     if (
       filename.includes("..") ||
       filename.includes("/") ||
@@ -177,54 +180,37 @@ const deleteReel = async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-        message:
-          "Invalid reel filename",
+        message: "Invalid reel filename",
       });
     }
 
-    const reelPath =
-      path.join(
-        reelsDir,
-        filename
-      );
+    const reelsDir = getReelsDir();
+    const reelPath = path.join(reelsDir, filename);
 
-    if (
-      !fs.existsSync(reelPath)
-    ) {
-      return res.status(404).json({
-        success: false,
-        message:
-          "Reel not found",
-      });
+    // Delete record from MongoDB
+    await Reel.deleteOne({ filename });
+
+    // Delete file from disk if present
+    if (fs.existsSync(reelPath)) {
+      try {
+        fs.unlinkSync(reelPath);
+      } catch (err) {
+        console.warn("⚠️ Could not delete physical reel file:", err.message);
+      }
     }
-
-    fs.unlinkSync(
-      reelPath
-    );
 
     return res.status(200).json({
       success: true,
-
-      message:
-        "Reel deleted successfully",
-
+      message: "Reel deleted successfully",
       filename,
     });
-
   } catch (error) {
-    console.error(
-      "REEL DELETE ERROR:",
-      error
-    );
+    console.error("REEL DELETE ERROR:", error);
 
     return res.status(500).json({
       success: false,
-
-      message:
-        "Unable to delete reel",
-
-      error:
-        error.message,
+      message: "Unable to delete reel",
+      error: error.message,
     });
   }
 };

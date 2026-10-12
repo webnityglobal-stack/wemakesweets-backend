@@ -7,6 +7,7 @@ const collectionRoutes = require(
   "./routes/collectionRoutes"
 );
 const whatsappRoutes = require("./routes/whatsapp.routes");
+const { getUploadRootDir } = require("./config/storage");
 
 
 const app = express();
@@ -76,7 +77,7 @@ app.use("/api/whatsapp", whatsappRoutes);
 app.use(
   "/uploads",
   express.static(
-    path.join(__dirname, "uploads")
+    getUploadRootDir()
   )
 );
 

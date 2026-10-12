@@ -1,6 +1,7 @@
 const HeroBanner = require("../models/HeroBanner");
 const fs = require("fs");
 const path = require("path");
+const { resolveFilePath } = require("../config/storage");
 
 // =====================================================
 // GET BACKEND URL
@@ -73,19 +74,12 @@ const uploadHeroImage = async (req, res) => {
       // -----------------------------------------------
 
       if (banner.image) {
-        const cleanImage = banner.image.replace(
-          /^https?:\/\/[^/]+/,
-          ""
-        );
-
-        const oldImagePath = path.join(
-          __dirname,
-          "..",
-          cleanImage
-        );
+        const oldImagePath = resolveFilePath(banner.image);
 
         if (fs.existsSync(oldImagePath)) {
-          fs.unlinkSync(oldImagePath);
+          try {
+            fs.unlinkSync(oldImagePath);
+          } catch (e) {}
         }
       }
 
@@ -219,21 +213,12 @@ const deleteHeroImage = async (req, res) => {
     // =================================================
 
     if (banner.image) {
-
-      // Remove backend domain from full URL
-      const cleanImage = banner.image.replace(
-        /^https?:\/\/[^/]+/,
-        ""
-      );
-
-      const imagePath = path.join(
-        __dirname,
-        "..",
-        cleanImage
-      );
+      const imagePath = resolveFilePath(banner.image);
 
       if (fs.existsSync(imagePath)) {
-        fs.unlinkSync(imagePath);
+        try {
+          fs.unlinkSync(imagePath);
+        } catch (e) {}
       }
     }
 

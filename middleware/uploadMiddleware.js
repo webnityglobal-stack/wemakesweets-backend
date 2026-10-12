@@ -1,26 +1,11 @@
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
-
-const productImageDir = path.join(
-  __dirname,
-  "../uploads/products/images"
-);
-
-const reelsDir = path.join(
-  __dirname,
-  "../uploads/reels"
-);
-
-const heroDir = path.join(
-  __dirname,
-  "../uploads/hero"
-);
-
-// Create folders safely
-fs.mkdirSync(productImageDir, { recursive: true });
-fs.mkdirSync(reelsDir, { recursive: true });
-fs.mkdirSync(heroDir, { recursive: true });
+const {
+  getProductImageDir,
+  getReelsDir,
+  getHeroDir,
+} = require("../config/storage");
 
 
 
@@ -91,7 +76,7 @@ const reelFilter = (req, file, cb) => {
 
 const productImageStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, productImageDir);
+    cb(null, getProductImageDir());
   },
 
   filename: (req, file, cb) => {
@@ -111,7 +96,7 @@ const productImageStorage = multer.diskStorage({
 
 const reelStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, reelsDir);
+    cb(null, getReelsDir());
   },
 
   filename: (req, file, cb) => {
@@ -131,7 +116,7 @@ const reelStorage = multer.diskStorage({
 
 const heroStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, heroDir);
+    cb(null, getHeroDir());
   },
 
   filename: (req, file, cb) => {

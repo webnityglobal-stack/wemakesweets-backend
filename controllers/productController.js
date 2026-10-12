@@ -5,6 +5,7 @@ const generateShiprocketId = require("../utils/generateShiprocketId");
 const { syncProductToFastRR } = require("../services/fastrrService");
 const fs = require("fs");
 const path = require("path");
+const { resolveFilePath } = require("../config/storage");
 
 // =====================================================
 // SAFE NUMBER HELPERS
@@ -1323,27 +1324,12 @@ const deleteProduct = async (
     ) {
       product.images.forEach(
         (image) => {
-          const cleanImage =
-            image.replace(
-              /^https?:\/\/[^/]+/,
-              ""
-            );
+          const imagePath = resolveFilePath(image);
 
-          const imagePath =
-            path.join(
-              __dirname,
-              "..",
-              cleanImage
-            );
-
-          if (
-            fs.existsSync(
-              imagePath
-            )
-          ) {
-            fs.unlinkSync(
-              imagePath
-            );
+          if (fs.existsSync(imagePath)) {
+            try {
+              fs.unlinkSync(imagePath);
+            } catch (e) {}
           }
         }
       );
@@ -1450,27 +1436,12 @@ const deleteProductImage = async (
     // REMOVE IMAGE FROM UPLOADS FOLDER
     // =================================================
 
-    const cleanImage =
-      image.replace(
-        /^https?:\/\/[^/]+/,
-        ""
-      );
+    const imagePath = resolveFilePath(image);
 
-    const imagePath =
-      path.join(
-        __dirname,
-        "..",
-        cleanImage
-      );
-
-    if (
-      fs.existsSync(
-        imagePath
-      )
-    ) {
-      fs.unlinkSync(
-        imagePath
-      );
+    if (fs.existsSync(imagePath)) {
+      try {
+        fs.unlinkSync(imagePath);
+      } catch (e) {}
     }
 
     return res.status(200).json({
