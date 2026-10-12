@@ -104,6 +104,33 @@ app.get("/", (req, res) => {
   );
 });
 
+app.get("/api/debug-storage", (req, res) => {
+  const fs = require("fs");
+  const path = require("path");
+  const { getUploadRootDir } = require("./config/storage");
+
+  const safeReaddir = (dir) => {
+    try {
+      return fs.readdirSync(dir);
+    } catch (e) {
+      return `Error: ${e.message}`;
+    }
+  };
+
+  res.json({
+    cwd: process.cwd(),
+    dirname: __dirname,
+    activeUploadsRoot: getUploadRootDir(),
+    cwdListing: safeReaddir(process.cwd()),
+    parentListing: safeReaddir(path.join(process.cwd(), "..")),
+    grandParentListing: safeReaddir(path.join(process.cwd(), "../..")),
+    greatGrandParentListing: safeReaddir(path.join(process.cwd(), "../../..")),
+    homeListing: safeReaddir("/home"),
+    userListing: safeReaddir("/home/u169575383"),
+    existsHostingerStorage: fs.existsSync("/home/u169575383/uploads_storage"),
+  });
+});
+
 
 // ====================================================
 // AUTH ROUTES
