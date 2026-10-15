@@ -342,6 +342,43 @@ const createOrder = async (req, res) => {
         pincode: String(req.body.shippingAddress.pincode || "250002"),
         country: req.body.shippingAddress.country || "India",
       };
+    } else {
+      const Address = require("../models/address");
+      const savedAddress = await Address.findOne({ user: userId })
+        .sort({ isDefault: -1, updatedAt: -1 })
+        .lean();
+
+      if (
+        savedAddress &&
+        savedAddress.address &&
+        savedAddress.address !== "Customer Address"
+      ) {
+        initialShippingAddress = {
+          name: savedAddress.name || user.name || "Customer",
+          phone: savedAddress.phone || user.phone || "9999999999",
+          email: savedAddress.email || user.email || "",
+          address: savedAddress.address,
+          address2: savedAddress.address2 || "",
+          city: savedAddress.city || "Meerut",
+          state: savedAddress.state || "Uttar Pradesh",
+          pincode: String(savedAddress.pincode || "250002"),
+          country: savedAddress.country || "India",
+        };
+      } else {
+        const lastOrder = await Order.findOne({
+          user: userId,
+          "shippingAddress.address": {
+            $exists: true,
+            $nin: [null, "", "Customer Address"],
+          },
+        })
+          .sort({ createdAt: -1 })
+          .lean();
+
+        if (lastOrder?.shippingAddress?.address) {
+          initialShippingAddress = lastOrder.shippingAddress;
+        }
+      }
     }
 
     // =================================================
@@ -614,6 +651,31 @@ const getMyOrders = async (
       }
     }
 
+    // Auto-resolve missing delivery addresses
+    const ordersMissingAddress = orders.filter(
+      (o) =>
+        !o.shippingAddress ||
+        !o.shippingAddress.address ||
+        o.shippingAddress.address === "Customer Address"
+    );
+
+    if (ordersMissingAddress.length > 0) {
+      try {
+        const { resolveAndSaveOrderAddress } = require("./paymentController");
+        for (const o of ordersMissingAddress) {
+          const resolved = await resolveAndSaveOrderAddress(o);
+          if (resolved) {
+            const refreshed = await Order.findById(o._id).lean();
+            if (refreshed?.shippingAddress) {
+              o.shippingAddress = refreshed.shippingAddress;
+            }
+          }
+        }
+      } catch (addrErr) {
+        console.warn("Could not auto-resolve address in getMyOrders:", addrErr.message);
+      }
+    }
+
     return res.status(200).json({
       success: true,
 
@@ -779,6 +841,26 @@ const getOrderById = async (
         await syncOrderShiprocketStatus(order);
       } catch (srSyncErr) {
         console.warn("Could not auto-sync Shiprocket in getOrderById:", srSyncErr.message);
+      }
+    }
+
+    // Auto-resolve missing delivery address
+    if (
+      !order.shippingAddress ||
+      !order.shippingAddress.address ||
+      order.shippingAddress.address === "Customer Address"
+    ) {
+      try {
+        const { resolveAndSaveOrderAddress } = require("./paymentController");
+        const resolved = await resolveAndSaveOrderAddress(order);
+        if (resolved) {
+          const refreshed = await Order.findById(order._id)
+            .populate("items.product", "name salePrice images sku variants")
+            .populate("paymentId");
+          if (refreshed) order = refreshed;
+        }
+      } catch (addrErr) {
+        console.warn("Could not auto-resolve address in getOrderById:", addrErr.message);
       }
     }
 

@@ -242,7 +242,34 @@ const resolveAndSaveOrderAddress = async (
         ? order.shippingAddress
         : null;
 
-    // 5. Try user profile
+    // 5. Try saved Address in DB
+    let dbAddress = null;
+    if (order.user) {
+      dbAddress = await Address.findOne({ user: order.user })
+        .sort({ isDefault: -1, updatedAt: -1 })
+        .lean();
+    }
+
+    // 6. Try user's previous order with a valid address
+    let lastOrderAddress = null;
+    if (order.user) {
+      const lastOrder = await Order.findOne({
+        user: order.user,
+        _id: { $ne: order._id },
+        "shippingAddress.address": {
+          $exists: true,
+          $nin: [null, "", "Customer Address"],
+        },
+      })
+        .sort({ createdAt: -1 })
+        .lean();
+
+      if (lastOrder?.shippingAddress?.address) {
+        lastOrderAddress = lastOrder.shippingAddress;
+      }
+    }
+
+    // 7. Try user profile
     let userDoc = null;
     if (order.user) {
       userDoc = await User.findById(order.user).lean();
@@ -265,11 +292,15 @@ const resolveAndSaveOrderAddress = async (
     // 2. FastRR Webhook Address
     // 3. Payment Gateway Response Address
     // 4. Order's existing address (if valid)
+    // 5. User's saved DB address
+    // 6. User's last order address
     const candidate =
       (hasValidAddress(checkoutAddress) ? checkoutAddress : null) ||
       (hasValidAddress(webhookAddress) ? webhookAddress : null) ||
       (hasValidAddress(paymentAddress) ? paymentAddress : null) ||
-      (hasValidAddress(orderAddress) ? orderAddress : null);
+      (hasValidAddress(orderAddress) ? orderAddress : null) ||
+      (hasValidAddress(dbAddress) ? dbAddress : null) ||
+      (hasValidAddress(lastOrderAddress) ? lastOrderAddress : null);
 
     if (!candidate) {
       console.log(`[Address] No valid address candidate found yet for order ${order.orderId}`);
@@ -545,6 +576,15 @@ const markOrderAndPaymentFailed = async (
         order.cancelledAt = new Date();
       }
       await order.save();
+
+      // Ensure delivery address is resolved if missing
+      if (
+        !order.shippingAddress ||
+        !order.shippingAddress.address ||
+        order.shippingAddress.address === "Customer Address"
+      ) {
+        await resolveAndSaveOrderAddress(order, null, gatewayResponse);
+      }
     }
 
     console.log(
