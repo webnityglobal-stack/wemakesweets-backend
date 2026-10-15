@@ -1105,6 +1105,13 @@ const updateOrderStatus =
 
       await order.save();
 
+      // Trigger WhatsApp Status Notification
+      whatsappService
+        .sendOrderStatusNotification(order, orderStatus)
+        .catch((waErr) =>
+          console.error("WhatsApp status notification error in orderController:", waErr.message)
+        );
+
       return res.status(200).json({
         success: true,
 

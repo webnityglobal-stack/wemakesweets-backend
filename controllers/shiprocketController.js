@@ -1,4 +1,5 @@
 const Order = require("../models/order");
+const whatsappService = require("../services/whatsappService");
 
 const {
   createShiprocketOrder,
@@ -115,6 +116,18 @@ const syncOrderShiprocketStatus = async (order, trackingRes = null) => {
 
     if (statusUpdated) {
       await order.save();
+
+      // Trigger WhatsApp Status Notification
+      if (["SHIPPED", "OUT_FOR_DELIVERY", "DELIVERED", "PACKED", "CONFIRMED"].includes(order.orderStatus)) {
+        whatsappService
+          .sendOrderStatusNotification(order, order.orderStatus)
+          .catch((waErr) =>
+            console.error(
+              "WhatsApp status notification error in syncOrderShiprocketStatus:",
+              waErr.message
+            )
+          );
+      }
     }
   } catch (err) {
     console.warn(`[Shiprocket Sync] Error syncing status for order ${order.orderId}:`, err.message);
@@ -968,6 +981,8 @@ const handleShiprocketWebhook = async (req, res) => {
       return res.status(200).json({ success: true, message: "Order not found" });
     }
 
+    const previousStatus = order.orderStatus;
+
     if (statusId === 8 || /CANCEL/.test(status)) {
       order.orderStatus = "CANCELLED";
       order.shiprocket.status = "CANCELLED";
@@ -990,6 +1005,21 @@ const handleShiprocketWebhook = async (req, res) => {
 
     await order.save();
     console.log(`Order ${order.orderId} updated via Shiprocket webhook: orderStatus=${order.orderStatus}, shiprocket.status=${order.shiprocket.status}`);
+
+    // Trigger WhatsApp Status Notification if status changed
+    if (
+      order.orderStatus !== previousStatus &&
+      ["SHIPPED", "OUT_FOR_DELIVERY", "DELIVERED", "PACKED", "CONFIRMED"].includes(order.orderStatus)
+    ) {
+      whatsappService
+        .sendOrderStatusNotification(order, order.orderStatus)
+        .catch((waErr) =>
+          console.error(
+            "WhatsApp status notification error in handleShiprocketWebhook:",
+            waErr.message
+          )
+        );
+    }
 
     return res.status(200).json({ success: true, message: "Webhook processed successfully" });
   } catch (error) {

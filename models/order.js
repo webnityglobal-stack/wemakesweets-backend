@@ -403,6 +403,15 @@ const orderSchema = new mongoose.Schema(
 
       default: () => ({}),
     },
+
+    // =================================================
+    // WHATSAPP NOTIFICATIONS SENT TRACKING
+    // =================================================
+
+    whatsappNotificationsSent: {
+      type: [String],
+      default: [],
+    },
   },
 
   {

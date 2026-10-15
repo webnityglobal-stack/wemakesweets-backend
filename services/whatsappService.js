@@ -613,15 +613,26 @@ const sendOrderStatusNotification = async (orderOrId, newStatus) => {
     }
 
     // Determine phone and customer name
-    const phone =
+    let phone =
       order.shippingAddress?.phone ||
-      (order.user && order.user.phone) ||
-      null;
+      (order.user && typeof order.user === "object" ? order.user.phone : null);
 
-    const customerName =
+    let customerName =
       order.shippingAddress?.name ||
-      (order.user && order.user.name) ||
-      "Customer";
+      (order.user && typeof order.user === "object" ? order.user.name : null);
+
+    if ((!phone || !customerName) && order.user) {
+      try {
+        const User = require("../models/user");
+        const userDoc = await User.findById(order.user).lean();
+        if (userDoc) {
+          if (!phone) phone = userDoc.phone;
+          if (!customerName) customerName = userDoc.name;
+        }
+      } catch (_) {}
+    }
+
+    customerName = customerName || "Customer";
 
     if (!phone) {
       console.warn(`⚠️ No phone number found for order ${order.orderId || order._id}`);
@@ -629,25 +640,62 @@ const sendOrderStatusNotification = async (orderOrId, newStatus) => {
     }
 
     const orderId = order.orderId || String(order._id);
-    const normalizedStatus = String(newStatus || "").toUpperCase().trim();
+    let normalizedStatus = String(newStatus || "").toUpperCase().trim().replace(/\s+/g, "_");
 
-    console.log(`📲 WhatsApp Status Update: Order ${orderId} -> ${normalizedStatus} for ${phone}`);
+    if (normalizedStatus === "IN_TRANSIT") {
+      normalizedStatus = "SHIPPED";
+    }
 
+    // Prevent duplicate WhatsApp notifications for the same status on this order
+    const Order = require("../models/order");
+    const currentOrder = await Order.findById(order._id)
+      .select("whatsappNotificationsSent")
+      .lean();
+    const alreadySent = currentOrder?.whatsappNotificationsSent || [];
+
+    if (alreadySent.includes(normalizedStatus)) {
+      console.log(
+        `ℹ️ WhatsApp notification for '${normalizedStatus}' already sent for order ${orderId}. Skipping duplicate.`
+      );
+      return { success: true, message: "Already sent" };
+    }
+
+    console.log(`📲 WhatsApp Status Update: Order ${orderId} -> ${normalizedStatus} for ${phone} (${customerName})`);
+
+    let result = null;
     switch (normalizedStatus) {
       case "CONFIRMED":
-        return await sendOrderConfirmedTemplate(phone, customerName, orderId);
+        result = await sendOrderConfirmedTemplate(phone, customerName, orderId);
+        break;
       case "PACKED":
-        return await sendOrderPackedTemplate(phone, customerName, orderId);
+        result = await sendOrderPackedTemplate(phone, customerName, orderId);
+        break;
       case "SHIPPED":
-        return await sendOrderShippedTemplate(phone, customerName, orderId);
+        result = await sendOrderShippedTemplate(phone, customerName, orderId);
+        break;
       case "OUT_FOR_DELIVERY":
-        return await sendOutForDeliveryTemplate(phone, customerName, orderId);
+      case "OUT_FOR_DELIV":
+        result = await sendOutForDeliveryTemplate(phone, customerName, orderId);
+        break;
       case "DELIVERED":
-        return await sendOrderDeliveredTemplate(phone, customerName, orderId);
+        result = await sendOrderDeliveredTemplate(phone, customerName, orderId);
+        break;
       default:
         console.log(`ℹ️ No WhatsApp template configured for status: ${normalizedStatus}`);
         return null;
     }
+
+    if (result?.success) {
+      console.log(`✅ WhatsApp ${normalizedStatus} notification sent successfully for ${orderId}`);
+      await Order.updateOne(
+        { _id: order._id },
+        { $addToSet: { whatsappNotificationsSent: normalizedStatus } }
+      ).catch(() => {});
+    } else {
+      console.warn(`⚠️ WhatsApp ${normalizedStatus} notification failed for ${orderId}:`, result?.error);
+    }
+
+    return result;
   } catch (error) {
     console.error("❌ Failed to send WhatsApp order status notification:", error.message);
   }
