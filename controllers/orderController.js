@@ -344,53 +344,6 @@ const createOrder = async (req, res) => {
       };
     }
 
-    if (!initialShippingAddress) {
-      const Address = require("../models/address");
-      const dbAddr = await Address.findOne({ user: userId })
-        .sort({ isDefault: -1, createdAt: -1 })
-        .lean();
-
-      if (dbAddr && dbAddr.address && dbAddr.address !== "Customer Address") {
-        initialShippingAddress = {
-          name: dbAddr.name || user.name || "Customer",
-          phone: dbAddr.phone || user.phone || "9999999999",
-          email: dbAddr.email || user.email || "",
-          address: dbAddr.address,
-          address2: dbAddr.address2 || "",
-          city: dbAddr.city,
-          state: dbAddr.state,
-          pincode: String(dbAddr.pincode),
-          country: dbAddr.country || "India",
-        };
-      }
-    }
-
-    if (!initialShippingAddress) {
-      const lastOrder = await Order.findOne({
-        user: userId,
-        "shippingAddress.address": {
-          $exists: true,
-          $nin: [null, "", "Customer Address"],
-        },
-      })
-        .sort({ createdAt: -1 })
-        .lean();
-
-      if (lastOrder?.shippingAddress?.address) {
-        initialShippingAddress = {
-          name: lastOrder.shippingAddress.name || user.name || "Customer",
-          phone: lastOrder.shippingAddress.phone || user.phone || "9999999999",
-          email: lastOrder.shippingAddress.email || user.email || "",
-          address: lastOrder.shippingAddress.address,
-          address2: lastOrder.shippingAddress.address2 || "",
-          city: lastOrder.shippingAddress.city,
-          state: lastOrder.shippingAddress.state,
-          pincode: String(lastOrder.shippingAddress.pincode),
-          country: lastOrder.shippingAddress.country || "India",
-        };
-      }
-    }
-
     // =================================================
     // CREATE ORDER
     // =================================================
@@ -609,7 +562,12 @@ const getMyOrders = async (
 
     if (pendingFastrrOrders.length > 0) {
       try {
-        const { syncFastrrOrder, isPaymentSuccessful } = require("./paymentController");
+        const {
+          syncFastrrOrder,
+          isPaymentSuccessful,
+          isPaymentFailed,
+          markOrderAndPaymentFailed,
+        } = require("./paymentController");
         for (const o of pendingFastrrOrders) {
           const payment = await Payment.findOne({ order: o._id });
           if (payment && payment.gatewayOrderId) {
@@ -619,6 +577,15 @@ const getMyOrders = async (
               );
               if (isPaymentSuccessful(null, checkoutDetails, null)) {
                 await syncFastrrOrder(o, payment, checkoutDetails, null);
+              } else if (isPaymentFailed(null, checkoutDetails, null)) {
+                await markOrderAndPaymentFailed(
+                  o,
+                  payment,
+                  checkoutDetails?.result?.error ||
+                    checkoutDetails?.message ||
+                    "Payment cancelled / failed in FastRR",
+                  checkoutDetails
+                );
               }
             } catch (_) {}
           }
@@ -730,7 +697,12 @@ const getOrderById = async (
       try {
         const payment = await Payment.findOne({ order: order._id });
         if (payment && payment.gatewayOrderId) {
-          const { syncFastrrOrder, isPaymentSuccessful } = require("./paymentController");
+          const {
+            syncFastrrOrder,
+            isPaymentSuccessful,
+            isPaymentFailed,
+            markOrderAndPaymentFailed,
+          } = require("./paymentController");
           let checkoutDetails = await fetchFastRROrderDetails(
             String(payment.gatewayOrderId)
           );
@@ -762,6 +734,24 @@ const getOrderById = async (
 
           if (isSuccess) {
             await syncFastrrOrder(order, payment, checkoutDetails, null);
+            const syncedOrder = await Order.findById(order._id)
+              .populate("items.product", "name salePrice images sku variants")
+              .populate("paymentId");
+            if (syncedOrder) {
+              return res.status(200).json({
+                success: true,
+                order: syncedOrder,
+              });
+            }
+          } else if (isPaymentFailed(null, checkoutDetails, null)) {
+            await markOrderAndPaymentFailed(
+              order,
+              payment,
+              checkoutDetails?.result?.error ||
+                checkoutDetails?.message ||
+                "Payment cancelled / failed in FastRR",
+              checkoutDetails
+            );
             const syncedOrder = await Order.findById(order._id)
               .populate("items.product", "name salePrice images sku variants")
               .populate("paymentId");
@@ -820,15 +810,24 @@ const cancelOrder = async (
   res
 ) => {
   try {
-    const order =
-      await Order.findOne({
-        _id:
-          req.params.id,
+    const userId =
+      req.user?.userId ||
+      req.userId;
 
-        user:
-          req.user?.userId ||
-          req.userId,
-      });
+    const id = req.params.id;
+
+    const query = {
+      user: userId,
+    };
+
+    if (mongoose.isValidObjectId(id)) {
+      query._id = id;
+    } else {
+      query.orderId = id;
+    }
+
+    const order =
+      await Order.findOne(query);
 
     if (!order) {
       return res.status(404).json({
@@ -841,8 +840,8 @@ const cancelOrder = async (
     const nonCancellableStatuses =
       [
         "SHIPPED",
+        "OUT_FOR_DELIVERY",
         "DELIVERED",
-        "CANCELLED",
       ];
 
     if (
@@ -857,20 +856,51 @@ const cancelOrder = async (
       });
     }
 
+    if (order.orderStatus === "CANCELLED") {
+      return res.status(200).json({
+        success: true,
+        message: "Order is already cancelled",
+        order,
+      });
+    }
+
+    const reason =
+      req.body?.reason ||
+      req.body?.cancellationReason ||
+      "Cancelled by user";
+
     order.orderStatus =
       "CANCELLED";
 
     order.cancelledAt =
       new Date();
 
+    order.cancellationReason =
+      reason;
+
+    if (
+      order.paymentStatus === "PROCESSING" ||
+      order.paymentStatus === "PENDING"
+    ) {
+      order.paymentStatus = "FAILED";
+    }
+
     await order.save();
+
+    const payment = await Payment.findOne({ order: order._id });
+    if (
+      payment &&
+      (payment.status === "PROCESSING" || payment.status === "PENDING")
+    ) {
+      payment.status = "FAILED";
+      payment.failureReason = reason;
+      await payment.save();
+    }
 
     return res.status(200).json({
       success: true,
-
       message:
         "Order cancelled successfully",
-
       order,
     });
 
@@ -882,9 +912,9 @@ const cancelOrder = async (
 
     return res.status(500).json({
       success: false,
-
       message:
         "Unable to cancel order",
+      error: error.message,
     });
   }
 };
@@ -1018,6 +1048,113 @@ const updateOrderStatus =
   };
 
 // =====================================================
+// UPDATE ORDER SHIPPING ADDRESS (From FastRR Checkout Modal)
+// =====================================================
+
+const updateShippingAddress = async (req, res) => {
+  try {
+    const userId = req.user?.userId;
+    const { id } = req.params;
+    const { shippingAddress } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    const order = await Order.findOne({
+      $or: [
+        { orderId: id },
+        { _id: mongoose.isValidObjectId(id) ? id : null },
+      ],
+      user: userId,
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    if (shippingAddress && typeof shippingAddress === "object") {
+      const line1 =
+        shippingAddress.line1 ||
+        shippingAddress.address1 ||
+        shippingAddress.address ||
+        shippingAddress.address_line1 ||
+        "";
+
+      if (line1 && line1 !== "Customer Address") {
+        const rawFullName = [
+          shippingAddress.first_name || shippingAddress.firstName,
+          shippingAddress.last_name || shippingAddress.lastName,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+
+        order.shippingAddress = {
+          name:
+            shippingAddress.name ||
+            rawFullName ||
+            order.shippingAddress?.name ||
+            "Customer",
+          phone:
+            String(
+              shippingAddress.phone ||
+              shippingAddress.mobile ||
+              shippingAddress.phone_number ||
+              order.shippingAddress?.phone ||
+              "9999999999"
+            ).replace(/\D/g, "").slice(-10) || "9999999999",
+          email:
+            shippingAddress.email ||
+            order.shippingAddress?.email ||
+            "",
+          address: line1,
+          address2:
+            shippingAddress.line2 ||
+            shippingAddress.address2 ||
+            shippingAddress.address_line2 ||
+            "",
+          city: shippingAddress.city || "Meerut",
+          state:
+            shippingAddress.state ||
+            shippingAddress.province ||
+            "Uttar Pradesh",
+          pincode: String(
+            shippingAddress.pincode ||
+            shippingAddress.zip ||
+            shippingAddress.postal_code ||
+            "250002"
+          ).trim(),
+          country: shippingAddress.country || "India",
+        };
+
+        order.markModified("shippingAddress");
+        await order.save();
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Order shipping address updated",
+      shippingAddress: order.shippingAddress,
+    });
+  } catch (error) {
+    console.error("UPDATE SHIPPING ADDRESS ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to update shipping address",
+      error: error.message,
+    });
+  }
+};
+
+// =====================================================
 // EXPORT
 // =====================================================
 
@@ -1033,4 +1170,6 @@ module.exports = {
   getAllOrders,
 
   updateOrderStatus,
+
+  updateShippingAddress,
 };

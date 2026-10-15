@@ -7,6 +7,7 @@ const {
   cancelOrder,
   getAllOrders,
   updateOrderStatus,
+  updateShippingAddress,
 } = require("../controllers/orderController");
 
 const authMiddleware = require("../middleware/authMiddleware");
@@ -25,6 +26,13 @@ router.post(
   createOrder
 );
 
+// Update order shipping address
+router.patch(
+  "/:id/shipping-address",
+  authMiddleware,
+  updateShippingAddress
+);
+
 // Get logged-in user's orders
 router.get(
   "/my-orders",
@@ -41,6 +49,12 @@ router.get(
 
 // Cancel order
 router.put(
+  "/cancel/:id",
+  authMiddleware,
+  cancelOrder
+);
+
+router.post(
   "/cancel/:id",
   authMiddleware,
   cancelOrder

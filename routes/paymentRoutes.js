@@ -56,13 +56,20 @@ router.post(
 
 
 // =====================================================
-// PAYMENT FAILED
+// PAYMENT FAILED / CANCEL
 //
 // POST /api/payment/failed
+// POST /api/payment/cancel
 // =====================================================
 
 router.post(
   "/failed",
+  authMiddleware,
+  paymentFailed
+);
+
+router.post(
+  "/cancel",
   authMiddleware,
   paymentFailed
 );

@@ -107,6 +107,8 @@ const parseAddressData = (sourceAddress, fallbackUser = null) => {
 
   const rawAddress =
     addr.line1 ||
+    addr.address1 ||
+    addr.address_1 ||
     addr.address ||
     addr.address_line1 ||
     addr.street ||
@@ -118,7 +120,10 @@ const parseAddressData = (sourceAddress, fallbackUser = null) => {
     return null;
   }
 
-  const rawFullName = [addr.first_name, addr.last_name]
+  const rawFullName = [
+    addr.first_name || addr.firstName,
+    addr.last_name || addr.lastName,
+  ]
     .filter(Boolean)
     .join(" ")
     .trim();
@@ -127,6 +132,7 @@ const parseAddressData = (sourceAddress, fallbackUser = null) => {
     addr.name ||
     rawFullName ||
     addr.customer_name ||
+    addr.customerName ||
     user.name ||
     "Customer";
 
@@ -134,6 +140,7 @@ const parseAddressData = (sourceAddress, fallbackUser = null) => {
     addr.phone ||
     addr.mobile ||
     addr.phone_number ||
+    addr.phoneNumber ||
     user.phone ||
     "9999999999"
   );
@@ -148,6 +155,7 @@ const parseAddressData = (sourceAddress, fallbackUser = null) => {
   const address2 =
     addr.line2 ||
     addr.address2 ||
+    addr.address_2 ||
     addr.address_line2 ||
     "";
 
@@ -165,6 +173,7 @@ const parseAddressData = (sourceAddress, fallbackUser = null) => {
       addr.pincode ||
       addr.zip ||
       addr.postal_code ||
+      addr.postalCode ||
       addr.zipcode ||
       "250002"
     ).trim();
@@ -196,20 +205,24 @@ const resolveAndSaveOrderAddress = async (
   webhookData = null
 ) => {
   try {
-    // 1. Try checkoutOrderDetails (FastRR order details)
+    // 1. Try checkoutOrderDetails (FastRR checkout order details)
     const checkoutAddress =
       checkoutOrderDetails?.result?.shipping_address ||
       checkoutOrderDetails?.shipping_address ||
       checkoutOrderDetails?.data?.shipping_address ||
+      checkoutOrderDetails?.result?.data?.shipping_address ||
       checkoutOrderDetails?.result?.billing_address ||
-      checkoutOrderDetails?.billing_address;
+      checkoutOrderDetails?.billing_address ||
+      checkoutOrderDetails?.data?.billing_address;
 
     // 2. Try webhookData (FastRR webhook)
     const webhookAddress =
       webhookData?.shipping_address ||
       webhookData?.result?.shipping_address ||
+      webhookData?.data?.shipping_address ||
       webhookData?.billing_address ||
-      webhookData?.result?.billing_address;
+      webhookData?.result?.billing_address ||
+      webhookData?.data?.billing_address;
 
     // 3. Try payment gatewayResponse
     let paymentAddress = null;
@@ -217,7 +230,8 @@ const resolveAndSaveOrderAddress = async (
       const p = await Payment.findById(order.paymentId).lean();
       paymentAddress =
         p?.gatewayResponse?.shipping_address ||
-        p?.gatewayResponse?.result?.shipping_address;
+        p?.gatewayResponse?.result?.shipping_address ||
+        p?.gatewayResponse?.billing_address;
     }
 
     // 4. Try order.shippingAddress IF it has a real address
@@ -228,51 +242,34 @@ const resolveAndSaveOrderAddress = async (
         ? order.shippingAddress
         : null;
 
-    // 5. Try saved Address in DB
-    let dbAddress = null;
-    if (order.user) {
-      dbAddress = await Address.findOne({ user: order.user })
-        .sort({ isDefault: -1, updatedAt: -1 })
-        .lean();
-    }
-
-    // 6. Try user's previous order with a valid address
-    let lastOrderAddress = null;
-    if (order.user) {
-      const lastOrder = await Order.findOne({
-        user: order.user,
-        _id: { $ne: order._id },
-        "shippingAddress.address": {
-          $exists: true,
-          $nin: [null, "", "Customer Address"],
-        },
-      })
-        .sort({ createdAt: -1 })
-        .lean();
-
-      if (lastOrder?.shippingAddress?.address) {
-        lastOrderAddress = lastOrder.shippingAddress;
-      }
-    }
-
-    // 7. Try user profile
+    // 5. Try user profile
     let userDoc = null;
     if (order.user) {
       userDoc = await User.findById(order.user).lean();
     }
 
+    const hasValidAddress = (a) => {
+      if (!a || typeof a !== "object") return false;
+      const line =
+        a.line1 ||
+        a.address1 ||
+        a.address_1 ||
+        a.address ||
+        a.address_line1 ||
+        a.street;
+      return Boolean(line && line !== "Customer Address");
+    };
+
     // Precedence:
-    // 1. Live FastRR / Webhook address (user may have changed/selected it in FastRR checkout)
-    // 2. Order's existing address (if valid)
-    // 3. User's saved DB address
-    // 4. User's last order address
+    // 1. Live FastRR Checkout Address (user selected/confirmed in the checkout modal)
+    // 2. FastRR Webhook Address
+    // 3. Payment Gateway Response Address
+    // 4. Order's existing address (if valid)
     const candidate =
-      (checkoutAddress && (checkoutAddress.line1 || checkoutAddress.address) ? checkoutAddress : null) ||
-      (webhookAddress && (webhookAddress.line1 || webhookAddress.address) ? webhookAddress : null) ||
-      (paymentAddress && (paymentAddress.line1 || paymentAddress.address) ? paymentAddress : null) ||
-      orderAddress ||
-      (dbAddress && dbAddress.address !== "Customer Address" ? dbAddress : null) ||
-      lastOrderAddress;
+      (hasValidAddress(checkoutAddress) ? checkoutAddress : null) ||
+      (hasValidAddress(webhookAddress) ? webhookAddress : null) ||
+      (hasValidAddress(paymentAddress) ? paymentAddress : null) ||
+      (hasValidAddress(orderAddress) ? orderAddress : null);
 
     if (!candidate) {
       console.log(`[Address] No valid address candidate found yet for order ${order.orderId}`);
@@ -431,6 +428,16 @@ const isPaymentFailed = (
     "CANCELED",
     "DECLINED",
     "EXPIRED",
+    "USER_DROPPED",
+    "DROPPED",
+    "ABORTED",
+    "PAYMENT_FAILED",
+    "ORDER_CANCELLED",
+    "REJECTED",
+    "BOUNCED",
+    "DISMISSED",
+    "CANCEL",
+    "VOID",
   ];
 
   if (
@@ -447,6 +454,23 @@ const isPaymentFailed = (
   ).trim().toUpperCase();
   if (failValues.includes(cdPaymentStatus)) return true;
 
+  const cdStatus = String(
+    checkoutDetails?.result?.status || checkoutDetails?.status || ""
+  ).trim().toUpperCase();
+  if (failValues.includes(cdStatus)) return true;
+
+  const payments =
+    checkoutDetails?.result?.payments || checkoutDetails?.payments;
+  if (Array.isArray(payments) && payments.length > 0) {
+    const hasFailed = payments.some((p) => {
+      const pStatus = String(
+        p?.payment_status || p?.status || ""
+      ).trim().toUpperCase();
+      return failValues.includes(pStatus);
+    });
+    if (hasFailed) return true;
+  }
+
   const whStatus = String(
     webhookData?.status || webhookData?.result?.status || ""
   ).trim().toUpperCase();
@@ -459,7 +483,76 @@ const isPaymentFailed = (
   ).trim().toUpperCase();
   if (failValues.includes(whPaymentStatus)) return true;
 
+  const whEvent = String(
+    webhookData?.event || webhookData?.event_type || ""
+  ).trim().toLowerCase();
+  if (
+    whEvent.includes("cancelled") ||
+    whEvent.includes("canceled") ||
+    whEvent.includes("failed") ||
+    whEvent.includes("dismissed") ||
+    whEvent.includes("declined") ||
+    whEvent.includes("expired") ||
+    whEvent.includes("dropped")
+  ) {
+    return true;
+  }
+
   return false;
+};
+
+// =====================================================
+// HELPER: MARK ORDER AND PAYMENT FAILED & CANCELLED
+// =====================================================
+
+const markOrderAndPaymentFailed = async (
+  order,
+  payment,
+  reason = "Payment cancelled / failed",
+  gatewayResponse = null
+) => {
+  try {
+    const failReason = reason || "Payment cancelled / failed";
+
+    // Do not override already confirmed / paid / delivered / shipped orders
+    if (
+      order &&
+      ["CONFIRMED", "SHIPPED", "OUT_FOR_DELIVERY", "DELIVERED"].includes(
+        String(order.orderStatus || "").toUpperCase()
+      ) &&
+      String(order.paymentStatus || "").toUpperCase() === "PAID"
+    ) {
+      console.warn(
+        `[markOrderAndPaymentFailed] Skipped: Order ${order.orderId} is already PAID / ${order.orderStatus}`
+      );
+      return;
+    }
+
+    if (payment) {
+      payment.status = "FAILED";
+      payment.failureReason = failReason;
+      if (gatewayResponse) {
+        payment.gatewayResponse = gatewayResponse;
+      }
+      await payment.save();
+    }
+
+    if (order) {
+      order.paymentStatus = "FAILED";
+      order.orderStatus = "CANCELLED";
+      order.cancellationReason = failReason;
+      if (!order.cancelledAt) {
+        order.cancelledAt = new Date();
+      }
+      await order.save();
+    }
+
+    console.log(
+      `[markOrderAndPaymentFailed] Order ${order?.orderId} marked CANCELLED, payment marked FAILED. Reason: ${failReason}`
+    );
+  } catch (err) {
+    console.error("[markOrderAndPaymentFailed] Error:", err.message);
+  }
 };
 
 // =====================================================
@@ -944,9 +1037,19 @@ const createPayment = async (req, res) => {
       process.env.FRONTEND_URL || "https://wemakesweets.com"
     ).replace(/\/+$/, "");
 
+    const userDoc = await User.findById(userId).lean();
+    const customerPhone = normalizePhone(userDoc?.phone || "");
+    const customerEmail = userDoc?.email || "";
+    const customerName = userDoc?.name || "";
+
     const payload = {
       cart_data: {
         items,
+      },
+      customer: {
+        phone: customerPhone,
+        email: customerEmail,
+        name: customerName,
       },
       redirect_url:
         `${frontendUrl}/payment/success` +
@@ -1075,6 +1178,19 @@ const paymentSuccess = async (req, res) => {
         if (isPaymentSuccessful(null, checkoutDetails, null)) {
           await syncFastrrOrder(order, payment, checkoutDetails, null);
           order = await Order.findById(order._id).populate("items.product");
+        } else if (isPaymentFailed(null, checkoutDetails, null)) {
+          console.log(
+            `[PaymentSuccess] Payment failed/cancelled in FastRR for ${order.orderId}`
+          );
+          await markOrderAndPaymentFailed(
+            order,
+            payment,
+            checkoutDetails?.result?.error ||
+              checkoutDetails?.message ||
+              "Payment cancelled / failed in FastRR",
+            checkoutDetails
+          );
+          order = await Order.findById(order._id).populate("items.product");
         }
       } catch (fastrrErr) {
         console.warn(
@@ -1195,6 +1311,18 @@ const verifyPayment = async (req, res) => {
 
         if (isSuccess) {
           await syncFastrrOrder(order, payment, checkoutDetails, null);
+        } else if (isPaymentFailed(null, checkoutDetails, null)) {
+          console.log(
+            `[Verify] Payment failed/cancelled for order ${order.orderId}`
+          );
+          await markOrderAndPaymentFailed(
+            order,
+            payment,
+            checkoutDetails?.result?.error ||
+              checkoutDetails?.message ||
+              "Payment cancelled / failed in FastRR",
+            checkoutDetails
+          );
         }
       } catch (fastrrErr) {
         console.warn(
@@ -1225,7 +1353,7 @@ const verifyPayment = async (req, res) => {
 };
 
 // =====================================================
-// 3. PAYMENT FAILED
+// 3. PAYMENT FAILED / CANCELLED
 // =====================================================
 
 const paymentFailed = async (req, res) => {
@@ -1255,37 +1383,60 @@ const paymentFailed = async (req, res) => {
       payment = await Payment.findOne({ orderId, user: userId });
     }
 
-    if (!payment) {
+    let order = null;
+    if (payment) {
+      order = await Order.findById(payment.order);
+    }
+    if (!order && orderId) {
+      order = await Order.findOne({ orderId, user: userId });
+      if (order && !payment) {
+        payment = await Payment.findOne({ order: order._id, user: userId });
+      }
+    }
+
+    if (!payment && !order) {
       return res.status(404).json({
         success: false,
-        message: "Payment not found",
+        message: "Payment or Order not found",
       });
     }
 
-    if (payment.paymentMethod === "COD") {
+    if (payment && payment.paymentMethod === "COD") {
       return res.status(400).json({
         success: false,
         message: "COD order does not use online payment failure flow",
       });
     }
 
-    payment.status = "FAILED";
-    payment.failureReason = failureReason || reason || "Payment failed";
-    await payment.save();
+    const failReason =
+      failureReason || reason || "Payment cancelled by user / failed";
 
-    await Order.findByIdAndUpdate(payment.order, {
-      paymentStatus: "FAILED",
-    });
+    await markOrderAndPaymentFailed(order, payment, failReason, req.body);
 
     return res.status(200).json({
       success: true,
-      message: "Payment marked as failed",
-      payment: {
-        id: payment._id,
-        orderId: payment.orderId,
-        status: payment.status,
-        failureReason: payment.failureReason,
-      },
+      message: "Payment marked as FAILED and order marked as CANCELLED",
+      orderId: order?.orderId || payment?.orderId,
+      orderStatus: order?.orderStatus || "CANCELLED",
+      paymentStatus: payment?.status || "FAILED",
+      payment: payment
+        ? {
+            id: payment._id,
+            orderId: payment.orderId,
+            status: payment.status,
+            failureReason: payment.failureReason,
+          }
+        : null,
+      order: order
+        ? {
+            id: order._id,
+            orderId: order.orderId,
+            orderStatus: order.orderStatus,
+            paymentStatus: order.paymentStatus,
+            cancellationReason: order.cancellationReason,
+            cancelledAt: order.cancelledAt,
+          }
+        : null,
     });
   } catch (error) {
     console.error("PAYMENT FAILED ERROR:", error);
@@ -1499,18 +1650,14 @@ const fastrrWebhook = async (req, res) => {
     // FAILED CASE
     if (isPaymentFailed(status, null, webhookData)) {
       console.log("FASTRR FAILURE WEBHOOK for order:", order.orderId);
-      payment.status = "FAILED";
-      payment.failureReason = getFirstValue(
+      const failReason = getFirstValue(
         webhookData?.message,
         webhookData?.error,
         webhookData?.failure_reason,
         "FastRR checkout/payment failed"
       );
-      payment.gatewayResponse = webhookData;
-      await payment.save();
 
-      order.paymentStatus = "FAILED";
-      await order.save();
+      await markOrderAndPaymentFailed(order, payment, failReason, webhookData);
 
       return res.status(200).json({
         success: true,
@@ -1518,6 +1665,7 @@ const fastrrWebhook = async (req, res) => {
         orderId: order.orderId,
         paymentMethod: order.paymentMethod,
         paymentStatus: order.paymentStatus,
+        orderStatus: order.orderStatus,
       });
     }
 
@@ -1710,6 +1858,7 @@ module.exports = {
   syncFastrrOrder,
   isPaymentSuccessful,
   isPaymentFailed,
+  markOrderAndPaymentFailed,
   resolveAndSaveOrderAddress,
   updateOrderAddressFromFastRR,
   buildShiprocketOrderPayload,
