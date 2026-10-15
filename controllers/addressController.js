@@ -10,12 +10,47 @@ const getMyAddresses = async (req, res) => {
   try {
     const userId = req.userId;
 
-    const addresses = await Address.find({
+    let addresses = await Address.find({
       user: userId,
     }).sort({
       isDefault: -1,
       createdAt: -1,
     });
+
+    // If no saved addresses found, auto-discover from user's most recent valid order
+    if (!addresses || addresses.length === 0) {
+      const Order = require("../models/order");
+      const lastOrder = await Order.findOne({
+        user: userId,
+        "shippingAddress.address": {
+          $exists: true,
+          $nin: [null, "", "Customer Address"],
+        },
+      }).sort({ createdAt: -1 });
+
+      if (lastOrder?.shippingAddress?.address) {
+        const sa = lastOrder.shippingAddress;
+        try {
+          const userDoc = await User.findById(userId).select("name email phone");
+          const created = await Address.create({
+            user: userId,
+            name: sa.name || userDoc?.name || "Customer",
+            phone: sa.phone || userDoc?.phone || "9999999999",
+            email: sa.email || userDoc?.email || "",
+            address: sa.address,
+            address2: sa.address2 || "",
+            city: sa.city || "Meerut",
+            state: sa.state || "Uttar Pradesh",
+            pincode: sa.pincode || "250002",
+            country: sa.country || "India",
+            isDefault: true,
+          });
+          addresses = [created];
+        } catch (saveErr) {
+          console.warn("[Address] Could not auto-seed address from last order:", saveErr.message);
+        }
+      }
+    }
 
     return res.status(200).json({
       success: true,

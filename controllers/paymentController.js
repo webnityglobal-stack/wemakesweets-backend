@@ -105,6 +105,19 @@ const parseAddressData = (sourceAddress, fallbackUser = null) => {
   const addr = sourceAddress || {};
   const user = fallbackUser || {};
 
+  const rawAddress =
+    addr.line1 ||
+    addr.address ||
+    addr.address_line1 ||
+    addr.street ||
+    "";
+
+  // If there's no real address or it's just the placeholder "Customer Address",
+  // do NOT invent a fake static address.
+  if (!rawAddress || rawAddress === "Customer Address") {
+    return null;
+  }
+
   const rawFullName = [addr.first_name, addr.last_name]
     .filter(Boolean)
     .join(" ")
@@ -115,7 +128,7 @@ const parseAddressData = (sourceAddress, fallbackUser = null) => {
     rawFullName ||
     addr.customer_name ||
     user.name ||
-    "Valued Customer";
+    "Customer";
 
   const phone = normalizePhone(
     addr.phone ||
@@ -130,12 +143,7 @@ const parseAddressData = (sourceAddress, fallbackUser = null) => {
     user.email ||
     "";
 
-  const address =
-    addr.line1 ||
-    addr.address ||
-    addr.address_line1 ||
-    addr.street ||
-    "Customer Address";
+  const address = rawAddress;
 
   const address2 =
     addr.line2 ||
@@ -145,12 +153,12 @@ const parseAddressData = (sourceAddress, fallbackUser = null) => {
 
   const city =
     addr.city ||
-    "Delhi";
+    "Meerut";
 
   const state =
     addr.state ||
     addr.province ||
-    "Delhi";
+    "Uttar Pradesh";
 
   const pincode =
     String(
@@ -158,7 +166,7 @@ const parseAddressData = (sourceAddress, fallbackUser = null) => {
       addr.zip ||
       addr.postal_code ||
       addr.zipcode ||
-      "110001"
+      "250002"
     ).trim();
 
   const country =
@@ -188,7 +196,7 @@ const resolveAndSaveOrderAddress = async (
   webhookData = null
 ) => {
   try {
-    // 1. Try checkoutOrderDetails
+    // 1. Try checkoutOrderDetails (FastRR order details)
     const checkoutAddress =
       checkoutOrderDetails?.result?.shipping_address ||
       checkoutOrderDetails?.shipping_address ||
@@ -196,7 +204,7 @@ const resolveAndSaveOrderAddress = async (
       checkoutOrderDetails?.result?.billing_address ||
       checkoutOrderDetails?.billing_address;
 
-    // 2. Try webhookData
+    // 2. Try webhookData (FastRR webhook)
     const webhookAddress =
       webhookData?.shipping_address ||
       webhookData?.result?.shipping_address ||
@@ -212,11 +220,13 @@ const resolveAndSaveOrderAddress = async (
         p?.gatewayResponse?.result?.shipping_address;
     }
 
-    // 4. Try user profile
-    let userDoc = null;
-    if (order.user) {
-      userDoc = await User.findById(order.user).lean();
-    }
+    // 4. Try order.shippingAddress IF it has a real address
+    const orderAddress =
+      order.shippingAddress &&
+      order.shippingAddress.address &&
+      order.shippingAddress.address !== "Customer Address"
+        ? order.shippingAddress
+        : null;
 
     // 5. Try saved Address in DB
     let dbAddress = null;
@@ -226,12 +236,48 @@ const resolveAndSaveOrderAddress = async (
         .lean();
     }
 
+    // 6. Try user's previous order with a valid address
+    let lastOrderAddress = null;
+    if (order.user) {
+      const lastOrder = await Order.findOne({
+        user: order.user,
+        _id: { $ne: order._id },
+        "shippingAddress.address": {
+          $exists: true,
+          $nin: [null, "", "Customer Address"],
+        },
+      })
+        .sort({ createdAt: -1 })
+        .lean();
+
+      if (lastOrder?.shippingAddress?.address) {
+        lastOrderAddress = lastOrder.shippingAddress;
+      }
+    }
+
+    // 7. Try user profile
+    let userDoc = null;
+    if (order.user) {
+      userDoc = await User.findById(order.user).lean();
+    }
+
+    // Precedence:
+    // 1. Live FastRR / Webhook address (user may have changed/selected it in FastRR checkout)
+    // 2. Order's existing address (if valid)
+    // 3. User's saved DB address
+    // 4. User's last order address
     const candidate =
-      checkoutAddress ||
-      webhookAddress ||
-      paymentAddress ||
-      order.shippingAddress ||
-      dbAddress;
+      (checkoutAddress && (checkoutAddress.line1 || checkoutAddress.address) ? checkoutAddress : null) ||
+      (webhookAddress && (webhookAddress.line1 || webhookAddress.address) ? webhookAddress : null) ||
+      (paymentAddress && (paymentAddress.line1 || paymentAddress.address) ? paymentAddress : null) ||
+      orderAddress ||
+      (dbAddress && dbAddress.address !== "Customer Address" ? dbAddress : null) ||
+      lastOrderAddress;
+
+    if (!candidate) {
+      console.log(`[Address] No valid address candidate found yet for order ${order.orderId}`);
+      return false;
+    }
 
     const parsed = parseAddressData(candidate, userDoc);
 
@@ -239,9 +285,36 @@ const resolveAndSaveOrderAddress = async (
       order.shippingAddress = parsed;
       order.markModified("shippingAddress");
       await order.save();
+
+      // Persist to user's Address collection so future checkouts automatically have it
+      if (order.user && parsed.address && parsed.address !== "Customer Address") {
+        try {
+          await Address.findOneAndUpdate(
+            { user: order.user, pincode: parsed.pincode, address: parsed.address },
+            {
+              user: order.user,
+              name: parsed.name,
+              phone: parsed.phone,
+              email: parsed.email,
+              address: parsed.address,
+              address2: parsed.address2 || "",
+              city: parsed.city,
+              state: parsed.state,
+              pincode: parsed.pincode,
+              country: parsed.country || "India",
+              isDefault: true,
+            },
+            { upsert: true, new: true }
+          );
+        } catch (saveAddrErr) {
+          console.warn("[Address] Could not auto-persist address to Address collection:", saveAddrErr.message);
+        }
+      }
+
       console.log(
         `[Address] Order ${order.orderId} shippingAddress saved:`,
         parsed.name,
+        parsed.address,
         parsed.city,
         parsed.pincode
       );
@@ -490,11 +563,11 @@ const buildShiprocketOrderPayload = (order, paymentMethod) => {
       .trim()
       .toUpperCase() === "COD";
 
-  const billingName = address.name || "Customer";
-  const billingAddr = address.address || "Customer Address";
-  const billingCity = address.city || "Delhi";
-  const billingPincode = String(address.pincode || "110001");
-  const billingState = address.state || "Delhi";
+  const billingName = address.name || order.user?.name || "Customer";
+  const billingAddr = address.address || "";
+  const billingCity = address.city || "Meerut";
+  const billingPincode = String(address.pincode || "250002");
+  const billingState = address.state || "Uttar Pradesh";
 
   const shippingCharge = Number(order.shippingCharge || 0);
   const subTotal = Number(

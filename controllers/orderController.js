@@ -321,14 +321,78 @@ const createOrder = async (req, res) => {
       `WMS-${Date.now()}`;
 
     // =================================================
-    // CREATE ORDER
+    // RESOLVE INITIAL SHIPPING ADDRESS
     // =================================================
-    //
-    // IMPORTANT:
-    // NO SHIPPING ADDRESS HERE.
-    //
-    // FastRR Checkout will collect address.
-    //
+    let initialShippingAddress = null;
+
+    if (
+      req.body.shippingAddress &&
+      typeof req.body.shippingAddress === "object" &&
+      req.body.shippingAddress.address &&
+      req.body.shippingAddress.address !== "Customer Address"
+    ) {
+      initialShippingAddress = {
+        name: req.body.shippingAddress.name || user.name || "Customer",
+        phone: req.body.shippingAddress.phone || user.phone || "9999999999",
+        email: req.body.shippingAddress.email || user.email || "",
+        address: req.body.shippingAddress.address,
+        address2: req.body.shippingAddress.address2 || "",
+        city: req.body.shippingAddress.city || "Meerut",
+        state: req.body.shippingAddress.state || "Uttar Pradesh",
+        pincode: String(req.body.shippingAddress.pincode || "250002"),
+        country: req.body.shippingAddress.country || "India",
+      };
+    }
+
+    if (!initialShippingAddress) {
+      const Address = require("../models/address");
+      const dbAddr = await Address.findOne({ user: userId })
+        .sort({ isDefault: -1, createdAt: -1 })
+        .lean();
+
+      if (dbAddr && dbAddr.address && dbAddr.address !== "Customer Address") {
+        initialShippingAddress = {
+          name: dbAddr.name || user.name || "Customer",
+          phone: dbAddr.phone || user.phone || "9999999999",
+          email: dbAddr.email || user.email || "",
+          address: dbAddr.address,
+          address2: dbAddr.address2 || "",
+          city: dbAddr.city,
+          state: dbAddr.state,
+          pincode: String(dbAddr.pincode),
+          country: dbAddr.country || "India",
+        };
+      }
+    }
+
+    if (!initialShippingAddress) {
+      const lastOrder = await Order.findOne({
+        user: userId,
+        "shippingAddress.address": {
+          $exists: true,
+          $nin: [null, "", "Customer Address"],
+        },
+      })
+        .sort({ createdAt: -1 })
+        .lean();
+
+      if (lastOrder?.shippingAddress?.address) {
+        initialShippingAddress = {
+          name: lastOrder.shippingAddress.name || user.name || "Customer",
+          phone: lastOrder.shippingAddress.phone || user.phone || "9999999999",
+          email: lastOrder.shippingAddress.email || user.email || "",
+          address: lastOrder.shippingAddress.address,
+          address2: lastOrder.shippingAddress.address2 || "",
+          city: lastOrder.shippingAddress.city,
+          state: lastOrder.shippingAddress.state,
+          pincode: String(lastOrder.shippingAddress.pincode),
+          country: lastOrder.shippingAddress.country || "India",
+        };
+      }
+    }
+
+    // =================================================
+    // CREATE ORDER
     // =================================================
 
     const order =
@@ -356,9 +420,8 @@ const createOrder = async (req, res) => {
         orderStatus:
           "PENDING",
 
-        // Address will come from FastRR webhook
         shippingAddress:
-          null,
+          initialShippingAddress || null,
 
         shiprocket: {
           orderId:
@@ -463,7 +526,7 @@ const createOrder = async (req, res) => {
           order.orderStatus,
 
         shippingAddress:
-          null,
+          order.shippingAddress,
       },
 
       payment: {
