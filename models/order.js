@@ -283,6 +283,28 @@ const orderSchema = new mongoose.Schema(
     },
 
     // =================================================
+    // DISCOUNT & COUPON
+    // =================================================
+
+    discount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    couponDiscount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    couponCode: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
+    // =================================================
     // TOTAL AMOUNT
     // =================================================
 
@@ -411,6 +433,15 @@ const orderSchema = new mongoose.Schema(
     whatsappNotificationsSent: {
       type: [String],
       default: [],
+    },
+
+    // =================================================
+    // FASTRR SYNC TRACKING
+    // =================================================
+
+    fastrrSyncedAt: {
+      type: Date,
+      default: null,
     },
   },
 

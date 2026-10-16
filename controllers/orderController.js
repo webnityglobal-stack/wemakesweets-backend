@@ -590,11 +590,11 @@ const getMyOrders = async (
           createdAt: -1,
         });
 
-    // Auto-sync active orders with FastRR (if pending online payments or missing shiprocket order)
+    // Auto-sync active orders with FastRR (if pending online payments, missing shiprocket order, or not synced)
     const pendingFastrrOrders = orders.filter(
       (o) =>
         (o.paymentMethod === "ONLINE" && o.paymentStatus === "PROCESSING") ||
-        (o.orderStatus === "CONFIRMED" && !o.shiprocket?.orderId)
+        (o.orderStatus === "CONFIRMED" && (!o.shiprocket?.orderId || !o.fastrrSyncedAt))
     );
 
     if (pendingFastrrOrders.length > 0) {
@@ -754,8 +754,8 @@ const getOrderById = async (
       });
     }
 
-    // Auto-sync with FastRR if order is not confirmed or shiprocket not created
-    if (order.orderStatus !== "CONFIRMED" || !order.shiprocket?.orderId) {
+    // Auto-sync with FastRR if order is not confirmed, shiprocket not created, or not synced
+    if (order.orderStatus !== "CONFIRMED" || !order.shiprocket?.orderId || !order.fastrrSyncedAt) {
       try {
         const payment = await Payment.findOne({ order: order._id });
         if (payment && payment.gatewayOrderId) {

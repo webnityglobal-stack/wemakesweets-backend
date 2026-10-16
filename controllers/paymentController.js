@@ -703,9 +703,10 @@ const buildShiprocketOrderPayload = (order, paymentMethod) => {
   const billingState = address.state || "Uttar Pradesh";
 
   const shippingCharge = Number(order.shippingCharge || 0);
+  const totalDiscount = Number(order.discount || order.couponDiscount || 0);
   const subTotal = Number(
     order.subtotal ||
-      Math.max(0, Number(order.totalAmount || 0) - shippingCharge)
+      Math.max(0, Number(order.totalAmount || 0) + totalDiscount - shippingCharge)
   );
 
   return {
@@ -751,7 +752,7 @@ const buildShiprocketOrderPayload = (order, paymentMethod) => {
     shipping_charges: shippingCharge,
     giftwrap_charges: 0,
     transaction_charges: 0,
-    total_discount: 0,
+    total_discount: totalDiscount,
     sub_total: subTotal,
 
     // PACKAGE
@@ -815,7 +816,105 @@ const syncFastrrOrder = async (
   // 1. Resolve & save address
   await resolveAndSaveOrderAddress(order, checkoutOrderDetails, webhookData);
 
-  // 2. Update Payment
+  // 2. Extract final payable amount, discount, and coupon codes from FastRR
+  const finalPayable = getFirstValue(
+    checkoutOrderDetails?.result?.total_amount_payable,
+    checkoutOrderDetails?.total_amount_payable,
+    webhookData?.result?.total_amount_payable,
+    webhookData?.total_amount_payable,
+    webhookData?.cart_data?.total_amount_payable,
+    webhookData?.amount
+  );
+
+  const totalDiscount = getFirstValue(
+    checkoutOrderDetails?.result?.total_discount,
+    checkoutOrderDetails?.result?.coupon_discount,
+    checkoutOrderDetails?.total_discount,
+    checkoutOrderDetails?.coupon_discount,
+    webhookData?.result?.total_discount,
+    webhookData?.result?.coupon_discount,
+    webhookData?.total_discount,
+    webhookData?.coupon_discount
+  );
+
+  const subtotalPrice = getFirstValue(
+    checkoutOrderDetails?.result?.subtotal_price,
+    checkoutOrderDetails?.subtotal_price,
+    webhookData?.result?.subtotal_price,
+    webhookData?.subtotal_price,
+    webhookData?.cart_data?.subtotal_price
+  );
+
+  const rawCouponCodes =
+    checkoutOrderDetails?.result?.coupon_codes ||
+    checkoutOrderDetails?.coupon_codes ||
+    webhookData?.result?.coupon_codes ||
+    webhookData?.coupon_codes;
+
+  let couponCode = null;
+  if (Array.isArray(rawCouponCodes) && rawCouponCodes.length > 0) {
+    couponCode = String(rawCouponCodes[0]).trim();
+  } else if (typeof rawCouponCodes === "string" && rawCouponCodes.trim()) {
+    couponCode = rawCouponCodes.trim();
+  }
+
+  if (
+    subtotalPrice !== null &&
+    Number.isFinite(Number(subtotalPrice)) &&
+    Number(subtotalPrice) > 0
+  ) {
+    order.subtotal = Number(subtotalPrice);
+  }
+
+  let numericDiscount = 0;
+  if (
+    totalDiscount !== null &&
+    Number.isFinite(Number(totalDiscount)) &&
+    Number(totalDiscount) >= 0
+  ) {
+    numericDiscount = Number(totalDiscount);
+  }
+
+  if (
+    finalPayable !== null &&
+    Number.isFinite(Number(finalPayable)) &&
+    Number(finalPayable) > 0
+  ) {
+    const numericPayable = Number(finalPayable);
+    order.totalAmount = numericPayable;
+    payment.amount = numericPayable;
+
+    if (numericDiscount === 0 && order.subtotal > numericPayable) {
+      numericDiscount = Number(
+        (order.subtotal + (order.shippingCharge || 0) - numericPayable).toFixed(2)
+      );
+      if (numericDiscount < 0) numericDiscount = 0;
+    }
+  } else if (numericDiscount > 0 && order.subtotal > 0) {
+    order.totalAmount = Math.max(
+      0,
+      Number((order.subtotal + (order.shippingCharge || 0) - numericDiscount).toFixed(2))
+    );
+    payment.amount = order.totalAmount;
+  }
+
+  order.discount = numericDiscount;
+  order.couponDiscount = numericDiscount;
+  if (couponCode) {
+    order.couponCode = couponCode;
+  }
+  order.fastrrSyncedAt = new Date();
+
+  console.log("FASTRR FINANCIAL SYNC:", {
+    orderId: order.orderId,
+    subtotal: order.subtotal,
+    discount: order.discount,
+    couponCode: order.couponCode,
+    totalAmount: order.totalAmount,
+    paymentAmount: payment.amount,
+  });
+
+  // 3. Update Payment
   const alreadyPaid = payment.status === "PAID";
   if (!alreadyPaid) {
     payment.status = targetPaymentStatus;
@@ -833,7 +932,7 @@ const syncFastrrOrder = async (
   }
   await payment.save();
 
-  // 3. Update Order
+  // 4. Update Order
   order.paymentMethod = targetPaymentMethod;
   order.paymentStatus = targetPaymentStatus;
   order.orderStatus = "CONFIRMED";
@@ -1208,7 +1307,7 @@ const paymentSuccess = async (req, res) => {
     if (
       order &&
       payment.gatewayOrderId &&
-      (order.orderStatus !== "CONFIRMED" || !order.shiprocket?.orderId)
+      (order.orderStatus !== "CONFIRMED" || !order.shiprocket?.orderId || !order.fastrrSyncedAt)
     ) {
       try {
         const checkoutDetails = await fetchFastRROrderDetails(
@@ -1317,10 +1416,10 @@ const verifyPayment = async (req, res) => {
       });
     }
 
-    // Auto-sync with FastRR if not confirmed or shiprocket order not created yet
+    // Auto-sync with FastRR if not confirmed or shiprocket order not created yet or not synced
     if (
       payment.gatewayOrderId &&
-      (order.orderStatus !== "CONFIRMED" || !order.shiprocket?.orderId)
+      (order.orderStatus !== "CONFIRMED" || !order.shiprocket?.orderId || !order.fastrrSyncedAt)
     ) {
       try {
         console.log("Verifying order with FastRR:", payment.gatewayOrderId);
