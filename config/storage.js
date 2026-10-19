@@ -116,6 +116,18 @@ const getHeroDir = () => {
   return dir;
 };
 
+
+const getGeneralImageDir = () => {
+  const dir = path.join(getUploadRootDir(), "general-images");
+
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  return dir;
+};
+
+
 /**
  * Resolves a file URL or relative path to its absolute filesystem path safely.
  */
@@ -131,5 +143,6 @@ module.exports = {
   getProductImageDir,
   getReelsDir,
   getHeroDir,
+  getGeneralImageDir,
   resolveFilePath,
 };

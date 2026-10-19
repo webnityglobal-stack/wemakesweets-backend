@@ -3,9 +3,8 @@ const express = require("express");
 const path = require("path");
 const errorMiddleware = require("./middleware/errorMiddleware");
 const catalogRoutes = require("./routes/catalogRoutes");
-const collectionRoutes = require(
-  "./routes/collectionRoutes"
-);
+const collectionRoutes = require("./routes/collectionRoutes");
+const imageUploadRoutes = require("./routes/imageUploadRoutes");
 const whatsappRoutes = require("./routes/whatsapp.routes");
 const { getUploadRootDir } = require("./config/storage");
 
@@ -221,6 +220,11 @@ app.use(
   "/api/hero-banner",
   require("./routes/heroBannerRoutes")
 );
+
+//====================================================
+// single image UPLOAD ROUTES
+//====================================================
+app.use("/api/image-upload", imageUploadRoutes);
 
 
 // ====================================================
