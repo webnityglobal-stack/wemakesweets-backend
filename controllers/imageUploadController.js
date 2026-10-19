@@ -128,8 +128,102 @@ const deleteImage = (req, res) => {
     }
 };
 
+// GET all uploaded custom images
+const getAllImages = (req, res) => {
+  try {
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+
+    const files = fs.readdirSync(imageDir);
+
+    const images = files
+      .filter((filename) =>
+        /\.(jpg|jpeg|png|webp)$/i.test(filename)
+      )
+      .filter((filename) =>
+        fs.statSync(path.join(imageDir, filename)).isFile()
+      )
+      .map((filename) => {
+        const filePath = path.join(imageDir, filename);
+        const stats = fs.statSync(filePath);
+
+        return {
+          filename,
+          path: `${baseUrl}/uploads/custom-images/${filename}`,
+          size: stats.size,
+        };
+      });
+
+    return res.status(200).json({
+      success: true,
+      message: "Images fetched successfully",
+      count: images.length,
+      images,
+    });
+  } catch (error) {
+    console.error("Get images error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch images",
+    });
+  }
+};
+
+
+// GET one image by filename
+const getImageByFilename = (req, res) => {
+  try {
+    const { filename } = req.params;
+
+    if (
+      !filename ||
+      filename !== path.basename(filename) ||
+      !/\.(jpg|jpeg|png|webp)$/i.test(filename)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid image filename",
+      });
+    }
+
+    const filePath = path.join(imageDir, filename);
+
+    if (
+      !fs.existsSync(filePath) ||
+      !fs.statSync(filePath).isFile()
+    ) {
+      return res.status(404).json({
+        success: false,
+        message: "Image not found",
+      });
+    }
+
+    const stats = fs.statSync(filePath);
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+
+    return res.status(200).json({
+      success: true,
+      message: "Image fetched successfully",
+      image: {
+        filename,
+        path: `${baseUrl}/uploads/custom-images/${filename}`,
+        size: stats.size,
+      },
+    });
+  } catch (error) {
+    console.error("Get image error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch image",
+    });
+  }
+};
+
 
 module.exports = {
     uploadSingleImage,
-    deleteImage
+    deleteImage,
+    getAllImages,
+    getImageByFilename
 };
