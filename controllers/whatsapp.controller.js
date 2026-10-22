@@ -79,7 +79,7 @@ const sendMainMenu = async (to, name, phoneId) => {
       `How can we help you today?\n\n` +
       `1️⃣ *Browse Products:*\n${websiteUrl}/products\n\n` +
       `2️⃣ *Track Order:*\nReply with your Order ID\n\n` +
-      `3️⃣ *Contact Us:*\n${process.env.SUPPORT_PHONE || "+91 98765 43210"}\n\n` +
+      `3️⃣ *Contact Us:*\n${process.env.SUPPORT_PHONE || "+91 18002032007"}\n\n` +
       `_Reply with your Order ID or *Hi* anytime._`;
     return await sendTextMessage(to, textMenu, phoneId);
   }
@@ -111,8 +111,8 @@ const handleViewProducts = async (to, phoneId) => {
 const handleContactQuery = async (to, phoneId) => {
   clearSession(to);
 
-  const supportPhone = process.env.SUPPORT_PHONE || "+91 98765 43210";
-  const supportEmail = process.env.SUPPORT_EMAIL || "support@wemakesweets.com";
+  const supportPhone = process.env.SUPPORT_PHONE || "+91 18002032007";
+  const supportEmail = process.env.SUPPORT_EMAIL || " cs@wemakesweets.com";
   const websiteUrl =
     process.env.FRONTEND_URL || "https://wemakesweets.com";
 
