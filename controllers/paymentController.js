@@ -1450,7 +1450,12 @@ const verifyPayment = async (req, res) => {
 
         if (isSuccess) {
           await syncFastrrOrder(order, payment, checkoutDetails, null);
-        } else if (isPaymentFailed(null, checkoutDetails, null)) {
+        } else if (
+          isPaymentFailed(null, checkoutDetails, null) ||
+          (order.orderStatus === "PENDING" &&
+            order.paymentMethod === "ONLINE" &&
+            Date.now() - new Date(order.createdAt).getTime() > 60 * 1000)
+        ) {
           console.log(
             `[Verify] Payment failed/cancelled for order ${order.orderId}`
           );
@@ -1459,7 +1464,7 @@ const verifyPayment = async (req, res) => {
             payment,
             checkoutDetails?.result?.error ||
               checkoutDetails?.message ||
-              "Payment cancelled / failed in FastRR",
+              "Payment cancelled / checkout backed out",
             checkoutDetails
           );
         }

@@ -593,7 +593,9 @@ const getMyOrders = async (
     // Auto-sync active orders with FastRR (if pending online payments, missing shiprocket order, or not synced)
     const pendingFastrrOrders = orders.filter(
       (o) =>
-        (o.paymentMethod === "ONLINE" && o.paymentStatus === "PROCESSING") ||
+        (o.paymentMethod === "ONLINE" &&
+          (o.paymentStatus === "PROCESSING" || o.paymentStatus === "PENDING") &&
+          o.orderStatus === "PENDING") ||
         (o.orderStatus === "CONFIRMED" && (!o.shiprocket?.orderId || !o.fastrrSyncedAt))
     );
 
@@ -623,8 +625,50 @@ const getMyOrders = async (
                     "Payment cancelled / failed in FastRR",
                   checkoutDetails
                 );
+                o.orderStatus = "CANCELLED";
+                o.paymentStatus = "FAILED";
+              } else if (
+                o.orderStatus === "PENDING" &&
+                o.paymentMethod === "ONLINE" &&
+                Date.now() - new Date(o.createdAt).getTime() > 60 * 1000
+              ) {
+                // If online order stayed in PENDING > 60s and payment not completed, mark CANCELLED & FAILED
+                await markOrderAndPaymentFailed(
+                  o,
+                  payment,
+                  "Checkout backed out / payment not completed",
+                  checkoutDetails
+                );
+                o.orderStatus = "CANCELLED";
+                o.paymentStatus = "FAILED";
               }
-            } catch (_) {}
+            } catch (syncErr) {
+              if (
+                o.orderStatus === "PENDING" &&
+                o.paymentMethod === "ONLINE" &&
+                Date.now() - new Date(o.createdAt).getTime() > 60 * 1000
+              ) {
+                await markOrderAndPaymentFailed(
+                  o,
+                  payment,
+                  "Checkout backed out / payment not completed"
+                );
+                o.orderStatus = "CANCELLED";
+                o.paymentStatus = "FAILED";
+              }
+            }
+          } else if (
+            o.orderStatus === "PENDING" &&
+            o.paymentMethod === "ONLINE" &&
+            Date.now() - new Date(o.createdAt).getTime() > 60 * 1000
+          ) {
+            await markOrderAndPaymentFailed(
+              o,
+              payment,
+              "Checkout abandoned before payment gateway initialization"
+            );
+            o.orderStatus = "CANCELLED";
+            o.paymentStatus = "FAILED";
           }
         }
       } catch (fastrrSyncErr) {
@@ -805,13 +849,18 @@ const getOrderById = async (
                 order: syncedOrder,
               });
             }
-          } else if (isPaymentFailed(null, checkoutDetails, null)) {
+          } else if (
+            isPaymentFailed(null, checkoutDetails, null) ||
+            (order.orderStatus === "PENDING" &&
+              order.paymentMethod === "ONLINE" &&
+              Date.now() - new Date(order.createdAt).getTime() > 60 * 1000)
+          ) {
             await markOrderAndPaymentFailed(
               order,
               payment,
               checkoutDetails?.result?.error ||
                 checkoutDetails?.message ||
-                "Payment cancelled / failed in FastRR",
+                "Payment cancelled / checkout backed out",
               checkoutDetails
             );
             const syncedOrder = await Order.findById(order._id)
