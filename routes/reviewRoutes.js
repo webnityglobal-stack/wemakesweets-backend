@@ -2,6 +2,7 @@ const express = require("express");
 
 const {
   addReview,
+  getAllReviews,
   getProductReviews,
   getReviewById,
   updateReview,
@@ -23,6 +24,9 @@ router.post(
   authMiddleware,
   addReview
 );
+
+//get all reviews
+router.get("/all", getAllReviews);
 
 
 // ==================================================

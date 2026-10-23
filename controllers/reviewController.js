@@ -388,6 +388,37 @@ const getProductReviews = async (req, res) => {
 };
 
 
+/**
+ * GET ALL LATEST 12 APPROVED REVIEWS
+ */
+const getAllReviews = async (req, res) => {
+  try {
+    const reviews = await Review.find({
+      isApproved: true,
+    })
+      .populate("user", "name email")
+      .populate("product", "name images")
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(12)
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      count: reviews.length,
+      reviews,
+    });
+  } catch (error) {
+    console.error("Get All Reviews Error:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to fetch reviews",
+    });
+  }
+};
+
+
+
 // ==================================================
 // GET SINGLE REVIEW
 // ==================================================
@@ -696,6 +727,7 @@ const updateProductRating = async (productId) => {
 module.exports = {
   addReview,
   getProductReviews,
+  getAllReviews,
   getReviewById,
   updateReview,
   deleteReview,
