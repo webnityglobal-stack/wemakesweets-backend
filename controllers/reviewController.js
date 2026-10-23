@@ -6,14 +6,176 @@ const mongoose = require("mongoose");
 // ==================================================
 // ADD REVIEW
 // ==================================================
+// unchaged review part only verified buyer can addd review 
+// const addReview = async (req, res) => {
+//   try {
+//     const {
+//       productId,
+//       rating,
+//       comment,
+//     } = req.body;
+
+//     // ------------------------------------------
+//     // VALIDATION
+//     // ------------------------------------------
+
+//     if (!productId) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Product ID is required",
+//       });
+//     }
+
+//     if (
+//       rating === undefined ||
+//       Number(rating) < 1 ||
+//       Number(rating) > 5
+//     ) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Rating must be between 1 and 5",
+//       });
+//     }
+
+//     if (
+//       !comment ||
+//       comment.trim() === ""
+//     ) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Comment is required",
+//       });
+//     }
+
+//     // ------------------------------------------
+//     // CHECK PRODUCT
+//     // ------------------------------------------
+
+//     const product = await Product.findById(productId);
+
+//     if (!product) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "Product not found",
+//       });
+//     }
+
+//     // ------------------------------------------
+//     // CHECK PURCHASE
+//     // ------------------------------------------
+
+//     const purchasedOrder = await Order.findOne({
+//       user: req.user.userId,
+
+//       paymentStatus: "PAID",
+
+//       orderStatus: "DELIVERED",
+
+//       "items.product": productId,
+//     });
+
+//     // ------------------------------------------
+//     // USER DID NOT PURCHASE PRODUCT
+//     // ------------------------------------------
+
+//     if (!purchasedOrder) {
+//       return res.status(403).json({
+//         success: false,
+//         message:
+//           "You can only review a product after purchasing and receiving it",
+//       });
+//     }
+
+//     // ------------------------------------------
+//     // CHECK IF USER ALREADY REVIEWED
+//     // ------------------------------------------
+
+//     const existingReview = await Review.findOne({
+//       product: productId,
+//       user: req.user.userId,
+//     });
+
+//     if (existingReview) {
+//       return res.status(400).json({
+//         success: false,
+//         message:
+//           "You have already reviewed this product",
+//       });
+//     }
+
+//     // ------------------------------------------
+//     // CREATE REVIEW
+//     // ------------------------------------------
+
+//     const review = await Review.create({
+//       product: productId,
+
+//       user: req.user.userId,
+
+//       name: req.user.name || "Customer",
+
+//       rating: Number(rating),
+
+//       comment: comment.trim(),
+
+//       verifiedPurchase: true,
+
+//       isApproved: true,
+//     });
+
+//     // ------------------------------------------
+//     // UPDATE PRODUCT RATING
+//     // ------------------------------------------
+
+//     await updateProductRating(productId);
+
+//     // ------------------------------------------
+//     // RESPONSE
+//     // ------------------------------------------
+
+//     return res.status(201).json({
+//       success: true,
+
+//       message: "Review added successfully",
+
+//       review,
+//     });
+
+//   } catch (error) {
+//     console.error(
+//       "Add Review Error:",
+//       error.message
+//     );
+
+//     return res.status(500).json({
+//       success: false,
+
+//       message: "Unable to add review",
+//     });
+//   }
+// };
+
+
+
+// changed add reivew part anyone can add reivew 
 
 const addReview = async (req, res) => {
   try {
-    const {
-      productId,
-      rating,
-      comment,
-    } = req.body;
+    const { productId, rating, comment } = req.body;
+
+    // ------------------------------------------
+    // VALIDATE AUTHENTICATION
+    // ------------------------------------------
+
+    if (!req.user || !req.user.userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Please login to add a review",
+      });
+    }
+
+    const userId = req.user.userId;
+    const userName = req.user.name || "Customer";
 
     // ------------------------------------------
     // VALIDATION
@@ -26,10 +188,15 @@ const addReview = async (req, res) => {
       });
     }
 
+    const numericRating = Number(rating);
+
     if (
       rating === undefined ||
-      Number(rating) < 1 ||
-      Number(rating) > 5
+      rating === null ||
+      rating === "" ||
+      !Number.isFinite(numericRating) ||
+      numericRating < 1 ||
+      numericRating > 5
     ) {
       return res.status(400).json({
         success: false,
@@ -38,7 +205,7 @@ const addReview = async (req, res) => {
     }
 
     if (
-      !comment ||
+      typeof comment !== "string" ||
       comment.trim() === ""
     ) {
       return res.status(400).json({
@@ -61,45 +228,46 @@ const addReview = async (req, res) => {
     }
 
     // ------------------------------------------
-    // CHECK PURCHASE
+    // TEMPORARY PURCHASE VERIFICATION TOGGLE
     // ------------------------------------------
 
-    const purchasedOrder = await Order.findOne({
-      user: req.user.userId,
+    const allowUnpurchasedReviews =
+      process.env.ALLOW_UNPURCHASED_REVIEWS === "true";
 
-      paymentStatus: "PAID",
+    let verifiedPurchase = false;
 
-      orderStatus: "DELIVERED",
-
-      "items.product": productId,
-    });
-
-    // ------------------------------------------
-    // USER DID NOT PURCHASE PRODUCT
-    // ------------------------------------------
-
-    if (!purchasedOrder) {
-      return res.status(403).json({
-        success: false,
-        message:
-          "You can only review a product after purchasing and receiving it",
+    if (!allowUnpurchasedReviews) {
+      const purchasedOrder = await Order.findOne({
+        user: userId,
+        paymentStatus: "PAID",
+        orderStatus: "DELIVERED",
+        "items.product": productId,
       });
+
+      if (!purchasedOrder) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "You can only review a product after purchasing and receiving it",
+        });
+      }
+
+      verifiedPurchase = true;
     }
 
     // ------------------------------------------
-    // CHECK IF USER ALREADY REVIEWED
+    // CHECK EXISTING REVIEW
     // ------------------------------------------
 
     const existingReview = await Review.findOne({
       product: productId,
-      user: req.user.userId,
+      user: userId,
     });
 
     if (existingReview) {
       return res.status(400).json({
         success: false,
-        message:
-          "You have already reviewed this product",
+        message: "You have already reviewed this product",
       });
     }
 
@@ -109,17 +277,11 @@ const addReview = async (req, res) => {
 
     const review = await Review.create({
       product: productId,
-
-      user: req.user.userId,
-
-      name: req.user.name || "Customer",
-
-      rating: Number(rating),
-
+      user: userId,
+      name: userName,
+      rating: numericRating,
       comment: comment.trim(),
-
-      verifiedPurchase: true,
-
+      verifiedPurchase,
       isApproved: true,
     });
 
@@ -135,25 +297,21 @@ const addReview = async (req, res) => {
 
     return res.status(201).json({
       success: true,
-
       message: "Review added successfully",
-
       review,
     });
 
   } catch (error) {
-    console.error(
-      "Add Review Error:",
-      error.message
-    );
+    console.error("Add Review Error:", error);
 
     return res.status(500).json({
       success: false,
-
       message: "Unable to add review",
     });
   }
 };
+
+
 
 
 // ==================================================
