@@ -20,7 +20,7 @@ const router = express.Router();
 
 router.post(
   "/add",
-  authMiddleware,
+  // authMiddleware,
   addReview
 );
 
