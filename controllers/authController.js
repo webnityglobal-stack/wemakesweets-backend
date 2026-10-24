@@ -142,7 +142,7 @@ const signup = async (req, res) => {
 
 const login = async (req, res) => {
   try {
-    const { email, phone, password } = req.body;
+    const { email, phone, identifier, password } = req.body;
 
     // Password required
     if (!password) {
@@ -152,25 +152,50 @@ const login = async (req, res) => {
       });
     }
 
+    const rawInput = (identifier || phone || email || "").trim();
+
     // Email OR phone required
-    if (!email && !phone) {
+    if (!rawInput && !email && !phone) {
       return res.status(400).json({
         success: false,
         message: "Email or phone is required",
       });
     }
 
+    const isEmail = rawInput.includes("@");
+    const digitsOnly = rawInput.replace(/\D/g, "");
+    const last10 = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : digitsOnly;
+
+    const searchConditions = [];
+
+    if (isEmail) {
+      searchConditions.push({ email: rawInput.toLowerCase() });
+    } else if (last10 && last10.length === 10) {
+      searchConditions.push(
+        { phone: last10 },
+        { phone: `+91${last10}` },
+        { phone: `91${last10}` },
+        { phone: rawInput }
+      );
+      searchConditions.push({ email: rawInput.toLowerCase() });
+    } else if (rawInput) {
+      searchConditions.push(
+        { phone: rawInput },
+        { email: rawInput.toLowerCase() }
+      );
+    }
+
+    // Direct fallbacks if explicit email/phone passed
+    if (email && !searchConditions.some((c) => c.email === email.toLowerCase().trim())) {
+      searchConditions.push({ email: email.toLowerCase().trim() });
+    }
+    if (phone && !searchConditions.some((c) => c.phone === phone.trim())) {
+      searchConditions.push({ phone: phone.trim() });
+    }
+
     // Find user
     const user = await User.findOne({
-      $or: [
-        ...(email
-          ? [{ email: email.toLowerCase().trim() }]
-          : []),
-
-        ...(phone
-          ? [{ phone: phone.trim() }]
-          : []),
-      ],
+      $or: searchConditions,
     });
 
     if (!user) {
