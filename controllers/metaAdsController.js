@@ -96,8 +96,53 @@ const getInsights = async (req, res) => {
   }
 };
 
+/**
+ * POST /api/meta-ads/event
+ * Receive Meta Conversions API event from frontend and forward to Meta Graph API
+ */
+const trackCapiEvent = async (req, res) => {
+  try {
+    const { eventName, eventId, eventSourceUrl, eventData, userData } = req.body || {};
+
+    if (!eventName || !eventId) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields: eventName and eventId",
+      });
+    }
+
+    const clientIp =
+      req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+      req.socket?.remoteAddress ||
+      "";
+
+    const result = await metaAdsService.sendConversionsApiEvent({
+      eventName,
+      eventId,
+      eventSourceUrl,
+      eventData,
+      userData,
+      clientIp,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    console.error("Meta CAPI Dispatch Error:", error.response?.data || error.message);
+
+    return res.status(200).json({
+      success: false,
+      message: error.response?.data?.error?.message || error.message,
+      error: error.response?.data || null,
+    });
+  }
+};
+
 module.exports = {
   getCampaignsReport,
   getAccountInfo,
   getInsights,
+  trackCapiEvent,
 };

@@ -1,4 +1,5 @@
 const axios = require("axios");
+const crypto = require("crypto");
 
 /**
  * Helper to get Meta Ads configuration from environment
@@ -263,10 +264,74 @@ const getCampaignsReport = async (options = {}) => {
   };
 };
 
+const hashSha256 = (str) => {
+  if (!str) return undefined;
+  return crypto.createHash("sha256").update(String(str).trim().toLowerCase()).digest("hex");
+};
+
+/**
+ * Send event to Meta Conversions API (CAPI)
+ */
+const sendConversionsApiEvent = async ({
+  eventName,
+  eventId,
+  eventSourceUrl,
+  eventData = {},
+  userData = {},
+  clientIp = "",
+}) => {
+  const pixelId = process.env.META_PIXEL_ID || "1523136356504886";
+  const accessToken =
+    process.env.META_CAPI_ACCESS_TOKEN ||
+    process.env.META_ACCESS_TOKEN ||
+    "EAAQJ2a062YcBSyXAtZA4324AJTf3E686P25lAnugQvCiIOzv6oQaFvdV0b66n0zRI8qy2OwNRxDu72nvg1WsQ6ilVw57vmYUX1EC1dxCsBqxOxRz3Ojcy5O14Im8acQcN1h4HZCs3OpWYV9si7mu5zwpaQZAMC1w4cgYiGoTqFVXlVVFFU5rOo90juqWnfZBrwZDZD";
+  const version = process.env.META_API_VERSION || "v21.0";
+
+  const hashedEmail = userData.email ? [hashSha256(userData.email)] : undefined;
+  const hashedPhone = userData.phone ? [hashSha256(userData.phone.replace(/\D/g, ""))] : undefined;
+
+  const payload = {
+    data: [
+      {
+        event_name: eventName,
+        event_time: Math.floor(Date.now() / 1000),
+        event_id: eventId,
+        event_source_url: eventSourceUrl || "",
+        action_source: "website",
+        user_data: {
+          client_ip_address: clientIp || undefined,
+          client_user_agent: userData.userAgent || undefined,
+          fbp: userData.fbp || undefined,
+          fbc: userData.fbc || undefined,
+          em: hashedEmail,
+          ph: hashedPhone,
+        },
+        custom_data: {
+          currency: "INR",
+          ...eventData,
+        },
+      },
+    ],
+  };
+
+  const response = await axios.post(
+    `https://graph.facebook.com/${version}/${pixelId}/events`,
+    payload,
+    {
+      params: { access_token: accessToken },
+      headers: { "Content-Type": "application/json" },
+      timeout: 10000,
+    }
+  );
+
+  return response.data;
+};
+
 module.exports = {
   getMetaAdsConfig,
   getAdAccountInfo,
   getCampaigns,
   getCampaignInsights,
   getCampaignsReport,
+  sendConversionsApiEvent,
 };
