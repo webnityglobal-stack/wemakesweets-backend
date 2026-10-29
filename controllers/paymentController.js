@@ -1196,6 +1196,51 @@ const createPayment = async (req, res) => {
       timestamp: new Date().toISOString(),
     };
 
+    // Resolve shipping address for FastRR prefill
+    let resolvedAddress = null;
+    if (
+      order.shippingAddress &&
+      order.shippingAddress.address &&
+      order.shippingAddress.address !== "Customer Address"
+    ) {
+      resolvedAddress = order.shippingAddress;
+    } else {
+      const Address = require("../models/address");
+      const savedAddress = await Address.findOne({ user: userId })
+        .sort({ isDefault: -1, updatedAt: -1 })
+        .lean();
+      if (
+        savedAddress &&
+        savedAddress.address &&
+        savedAddress.address !== "Customer Address"
+      ) {
+        resolvedAddress = savedAddress;
+      }
+    }
+
+    if (resolvedAddress) {
+      const rawName = (resolvedAddress.name || customerName || "Customer").trim();
+      const nameParts = rawName.split(/\s+/);
+      const firstName = nameParts[0] || "Customer";
+      const lastName = nameParts.slice(1).join(" ") || "";
+      const addrPhone = normalizePhone(resolvedAddress.phone || customerPhone);
+
+      const addrPayload = {
+        first_name: firstName,
+        last_name: lastName,
+        address1: resolvedAddress.address || "",
+        address2: resolvedAddress.address2 || "",
+        city: resolvedAddress.city || "Meerut",
+        state: resolvedAddress.state || "Uttar Pradesh",
+        pincode: String(resolvedAddress.pincode || "250002"),
+        country: resolvedAddress.country || "India",
+        phone: addrPhone,
+      };
+
+      payload.shipping_address = addrPayload;
+      payload.billing_address = addrPayload;
+    }
+
     console.log("========================================");
     console.log("CREATING FASTRR CHECKOUT");
     console.log("Order:", order.orderId);
