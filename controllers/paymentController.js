@@ -30,9 +30,9 @@ const getUserId = (req) => {
     req.user?.id ||
     req.user?._id
 
-    
+
   );
-  
+
 };
 
 
@@ -237,37 +237,37 @@ const resolveAndSaveOrderAddress = async (
     // 4. Try order.shippingAddress IF it has a real address
     const orderAddress =
       order.shippingAddress &&
-      order.shippingAddress.address &&
-      order.shippingAddress.address !== "Customer Address"
+        order.shippingAddress.address &&
+        order.shippingAddress.address !== "Customer Address"
         ? order.shippingAddress
         : null;
 
-    // 5. Try saved Address in DB
-    let dbAddress = null;
-    if (order.user) {
-      dbAddress = await Address.findOne({ user: order.user })
-        .sort({ isDefault: -1, updatedAt: -1 })
-        .lean();
-    }
+    // // 5. Try saved Address in DB
+    // let dbAddress = null;
+    // if (order.user) {
+    //   dbAddress = await Address.findOne({ user: order.user })
+    //     .sort({ isDefault: -1, updatedAt: -1 })
+    //     .lean();
+    // }
 
-    // 6. Try user's previous order with a valid address
-    let lastOrderAddress = null;
-    if (order.user) {
-      const lastOrder = await Order.findOne({
-        user: order.user,
-        _id: { $ne: order._id },
-        "shippingAddress.address": {
-          $exists: true,
-          $nin: [null, "", "Customer Address"],
-        },
-      })
-        .sort({ createdAt: -1 })
-        .lean();
+    // // 6. Try user's previous order with a valid address
+    // let lastOrderAddress = null;
+    // if (order.user) {
+    //   const lastOrder = await Order.findOne({
+    //     user: order.user,
+    //     _id: { $ne: order._id },
+    //     "shippingAddress.address": {
+    //       $exists: true,
+    //       $nin: [null, "", "Customer Address"],
+    //     },
+    //   })
+    //     .sort({ createdAt: -1 })
+    //     .lean();
 
-      if (lastOrder?.shippingAddress?.address) {
-        lastOrderAddress = lastOrder.shippingAddress;
-      }
-    }
+    //   if (lastOrder?.shippingAddress?.address) {
+    //     lastOrderAddress = lastOrder.shippingAddress;
+    //   }
+    // }
 
     // 7. Try user profile
     let userDoc = null;
@@ -298,9 +298,7 @@ const resolveAndSaveOrderAddress = async (
       (hasValidAddress(checkoutAddress) ? checkoutAddress : null) ||
       (hasValidAddress(webhookAddress) ? webhookAddress : null) ||
       (hasValidAddress(paymentAddress) ? paymentAddress : null) ||
-      (hasValidAddress(orderAddress) ? orderAddress : null) ||
-      (hasValidAddress(dbAddress) ? dbAddress : null) ||
-      (hasValidAddress(lastOrderAddress) ? lastOrderAddress : null);
+      (hasValidAddress(orderAddress) ? orderAddress : null);
 
     if (!candidate) {
       console.log(`[Address] No valid address candidate found yet for order ${order.orderId}`);
@@ -313,42 +311,9 @@ const resolveAndSaveOrderAddress = async (
       order.shippingAddress = parsed;
       order.markModified("shippingAddress");
       await order.save();
-
-      // Persist to user's Address collection so future checkouts automatically have it
-      if (order.user && parsed.address && parsed.address !== "Customer Address") {
-        try {
-          await Address.findOneAndUpdate(
-            { user: order.user, pincode: parsed.pincode, address: parsed.address },
-            {
-              user: order.user,
-              name: parsed.name,
-              phone: parsed.phone,
-              email: parsed.email,
-              address: parsed.address,
-              address2: parsed.address2 || "",
-              city: parsed.city,
-              state: parsed.state,
-              pincode: parsed.pincode,
-              country: parsed.country || "India",
-              isDefault: true,
-            },
-            { upsert: true, new: true }
-          );
-        } catch (saveAddrErr) {
-          console.warn("[Address] Could not auto-persist address to Address collection:", saveAddrErr.message);
-        }
-      }
-
-      console.log(
-        `[Address] Order ${order.orderId} shippingAddress saved:`,
-        parsed.name,
-        parsed.address,
-        parsed.city,
-        parsed.pincode
-      );
+      // Address collection mein yahan kuch save NAHI hoga
       return true;
     }
-
     return false;
   } catch (err) {
     console.warn(
@@ -669,25 +634,25 @@ const buildShiprocketOrderPayload = (order, paymentMethod) => {
 
   const packageLength =
     Number.isFinite(Number(firstPackageItem.length)) &&
-    Number(firstPackageItem.length) > 0
+      Number(firstPackageItem.length) > 0
       ? Number(firstPackageItem.length)
       : Number(process.env.SHIPROCKET_PACKAGE_LENGTH) || 10;
 
   const packageBreadth =
     Number.isFinite(Number(firstPackageItem.breadth)) &&
-    Number(firstPackageItem.breadth) > 0
+      Number(firstPackageItem.breadth) > 0
       ? Number(firstPackageItem.breadth)
       : Number(process.env.SHIPROCKET_PACKAGE_BREADTH) || 10;
 
   const packageHeight =
     Number.isFinite(Number(firstPackageItem.height)) &&
-    Number(firstPackageItem.height) > 0
+      Number(firstPackageItem.height) > 0
       ? Number(firstPackageItem.height)
       : Number(process.env.SHIPROCKET_PACKAGE_HEIGHT) || 10;
 
   const packageWeight =
     Number.isFinite(Number(totalPackageWeight)) &&
-    Number(totalPackageWeight) > 0
+      Number(totalPackageWeight) > 0
       ? Number(totalPackageWeight)
       : Number(process.env.SHIPROCKET_PACKAGE_WEIGHT) || 0.5;
 
@@ -706,7 +671,7 @@ const buildShiprocketOrderPayload = (order, paymentMethod) => {
   const totalDiscount = Number(order.discount || order.couponDiscount || 0);
   const subTotal = Number(
     order.subtotal ||
-      Math.max(0, Number(order.totalAmount || 0) + totalDiscount - shippingCharge)
+    Math.max(0, Number(order.totalAmount || 0) + totalDiscount - shippingCharge)
   );
 
   return {
@@ -1236,10 +1201,6 @@ const createPayment = async (req, res) => {
     order.paymentStatus = "PROCESSING";
     await order.save();
 
-    if (payment.gatewayOrderId) {
-      await fetchAndSaveCheckoutAddress(order, payment);
-    }
-
     return res.status(200).json({
       success: true,
       message: "FASTRR checkout created successfully",
@@ -1325,8 +1286,8 @@ const paymentSuccess = async (req, res) => {
             order,
             payment,
             checkoutDetails?.result?.error ||
-              checkoutDetails?.message ||
-              "Payment cancelled / failed in FastRR",
+            checkoutDetails?.message ||
+            "Payment cancelled / failed in FastRR",
             checkoutDetails
           );
           order = await Order.findById(order._id).populate("items.product");
@@ -1445,7 +1406,7 @@ const verifyPayment = async (req, res) => {
               String(payment.gatewayOrderId)
             );
             isSuccess = isPaymentSuccessful(null, checkoutDetails, null);
-          } catch (_) {}
+          } catch (_) { }
         }
 
         if (isSuccess) {
@@ -1463,8 +1424,8 @@ const verifyPayment = async (req, res) => {
             order,
             payment,
             checkoutDetails?.result?.error ||
-              checkoutDetails?.message ||
-              "Payment cancelled / checkout backed out",
+            checkoutDetails?.message ||
+            "Payment cancelled / checkout backed out",
             checkoutDetails
           );
         }
@@ -1565,21 +1526,21 @@ const paymentFailed = async (req, res) => {
       paymentStatus: payment?.status || "FAILED",
       payment: payment
         ? {
-            id: payment._id,
-            orderId: payment.orderId,
-            status: payment.status,
-            failureReason: payment.failureReason,
-          }
+          id: payment._id,
+          orderId: payment.orderId,
+          status: payment.status,
+          failureReason: payment.failureReason,
+        }
         : null,
       order: order
         ? {
-            id: order._id,
-            orderId: order.orderId,
-            orderStatus: order.orderStatus,
-            paymentStatus: order.paymentStatus,
-            cancellationReason: order.cancellationReason,
-            cancelledAt: order.cancelledAt,
-          }
+          id: order._id,
+          orderId: order.orderId,
+          orderStatus: order.orderStatus,
+          paymentStatus: order.paymentStatus,
+          cancellationReason: order.cancellationReason,
+          cancelledAt: order.cancelledAt,
+        }
         : null,
     });
   } catch (error) {
@@ -1767,7 +1728,7 @@ const fastrrWebhook = async (req, res) => {
         console.warn(
           "Unable to fetch FastRR checkout order details in webhook:",
           checkoutDetailsError?.response?.data ||
-            checkoutDetailsError.message
+          checkoutDetailsError.message
         );
       }
 
