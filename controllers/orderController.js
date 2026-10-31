@@ -332,8 +332,8 @@ const createOrder = async (req, res) => {
       req.body.shippingAddress.address !== "Customer Address"
     ) {
       initialShippingAddress = {
-        name: req.body.shippingAddress.name || user.name || "Customer",
-        phone: req.body.shippingAddress.phone || user.phone || "9999999999",
+        name: req.body.shippingAddress.name || user.name || user.fullName || "Customer",
+        phone: req.body.shippingAddress.phone || user.phone || user.mobile || "",
         email: req.body.shippingAddress.email || user.email || "",
         address: req.body.shippingAddress.address,
         address2: req.body.shippingAddress.address2 || "",
@@ -354,8 +354,8 @@ const createOrder = async (req, res) => {
         savedAddress.address !== "Customer Address"
       ) {
         initialShippingAddress = {
-          name: savedAddress.name || user.name || "Customer",
-          phone: savedAddress.phone || user.phone || "9999999999",
+          name: savedAddress.name || user.name || user.fullName || "Customer",
+          phone: savedAddress.phone || user.phone || user.mobile || "",
           email: savedAddress.email || user.email || "",
           address: savedAddress.address,
           address2: savedAddress.address2 || "",

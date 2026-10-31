@@ -99,9 +99,9 @@ const getAccount = async (req, res) => {
       account: {
         profile: {
           _id: user._id,
-          name: user.name,
+          name: user.name || user.fullName || "",
           email: user.email,
-          phone: user.phone,
+          phone: user.phone || user.mobile || "",
           role: user.role,
           createdAt: user.createdAt,
         },
@@ -162,9 +162,13 @@ const getMyProfile = async (req, res) => {
       });
     }
 
+    const profileUser = user.toObject ? user.toObject() : { ...user };
+    profileUser.name = profileUser.name || profileUser.fullName || "";
+    profileUser.phone = profileUser.phone || profileUser.mobile || "";
+
     return res.status(200).json({
       success: true,
-      user,
+      user: profileUser,
     });
   } catch (error) {
     console.error("Get My Profile Error:", error);
@@ -223,7 +227,7 @@ const updateMyProfile = async (req, res) => {
 
     // Check if phone is already used by another user
     const existingPhoneUser = await User.findOne({
-      phone: trimmedPhone,
+      $or: [{ phone: trimmedPhone }, { mobile: trimmedPhone }],
       _id: { $ne: userId },
     });
 
@@ -252,7 +256,9 @@ const updateMyProfile = async (req, res) => {
       userId,
       {
         name: trimmedName,
+        fullName: trimmedName,
         phone: trimmedPhone,
+        mobile: trimmedPhone,
         email: trimmedEmail,
       },
       {

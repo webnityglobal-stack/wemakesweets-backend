@@ -31,11 +31,12 @@ const getMyAddresses = async (req, res) => {
       if (lastOrder?.shippingAddress?.address) {
         const sa = lastOrder.shippingAddress;
         try {
-          const userDoc = await User.findById(userId).select("name email phone");
+          const userDoc = await User.findById(userId).select("name fullName email phone mobile");
+          const fallbackPhone = userDoc?.phone || userDoc?.mobile || "";
           const created = await Address.create({
             user: userId,
-            name: sa.name || userDoc?.name || "Customer",
-            phone: sa.phone || userDoc?.phone || "9999999999",
+            name: sa.name || userDoc?.name || userDoc?.fullName || "Customer",
+            phone: sa.phone || fallbackPhone || "",
             email: sa.email || userDoc?.email || "",
             address: sa.address,
             address2: sa.address2 || "",
@@ -77,7 +78,7 @@ const addAddress = async (req, res) => {
 
     // Get logged-in user's profile
     const user = await User.findById(userId).select(
-      "name email phone"
+      "name fullName email phone mobile"
     );
 
     if (!user) {
@@ -88,6 +89,9 @@ const addAddress = async (req, res) => {
     }
 
     const {
+      name: bodyName,
+      phone: bodyPhone,
+      email: bodyEmail,
       address,
       address2,
       city,
@@ -108,6 +112,33 @@ const addAddress = async (req, res) => {
         success: false,
         message:
           "Address, city, state and pincode are required",
+      });
+    }
+
+    const resolvedName = (bodyName || user.name || user.fullName || "").trim();
+    const resolvedPhone = (bodyPhone || user.phone || user.mobile || "").trim();
+    const resolvedEmail = (bodyEmail || user.email || "").trim();
+
+    if (!resolvedName) {
+      return res.status(400).json({
+        success: false,
+        message: "Name is required for delivery address",
+      });
+    }
+
+    if (!resolvedPhone) {
+      return res.status(400).json({
+        success: false,
+        message: "Phone number is required for delivery address",
+      });
+    }
+
+    // Auto-update user document with phone / name if user doc is missing them
+    if (resolvedPhone && (!user.phone && !user.mobile)) {
+      await User.findByIdAndUpdate(userId, {
+        phone: resolvedPhone,
+        mobile: resolvedPhone,
+        ...(user.name || user.fullName ? {} : { name: resolvedName, fullName: resolvedName }),
       });
     }
 
@@ -140,11 +171,9 @@ const addAddress = async (req, res) => {
     // Create address
     const newAddress = await Address.create({
       user: userId,
-
-      // Automatically taken from User
-      name: user.name,
-      phone: user.phone,
-      email: user.email,
+      name: resolvedName,
+      phone: resolvedPhone,
+      email: resolvedEmail,
 
       // Address details
       address: address.trim(),

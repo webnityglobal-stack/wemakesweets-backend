@@ -82,14 +82,14 @@ const isCODPayment = (paymentType) => {
 
 const normalizePhone = (phone) => {
   if (!phone) {
-    return "9999999999";
+    return "";
   }
 
   const digits = String(phone).replace(/\D/g, "");
   const normalized = digits.slice(-10);
 
   if (!/^\d{10}$/.test(normalized)) {
-    return "9999999999";
+    return "";
   }
 
   return normalized;
@@ -134,16 +134,19 @@ const parseAddressData = (sourceAddress, fallbackUser = null) => {
     addr.customer_name ||
     addr.customerName ||
     user.name ||
+    user.fullName ||
     "Customer";
 
-  const phone = normalizePhone(
+  const rawPhone =
     addr.phone ||
     addr.mobile ||
     addr.phone_number ||
     addr.phoneNumber ||
     user.phone ||
-    "9999999999"
-  );
+    user.mobile ||
+    "";
+
+  const phone = normalizePhone(rawPhone);
 
   const email =
     addr.email ||
@@ -311,7 +314,52 @@ const resolveAndSaveOrderAddress = async (
       order.shippingAddress = parsed;
       order.markModified("shippingAddress");
       await order.save();
-      // Address collection mein yahan kuch save NAHI hoga
+
+      // If user profile is missing phone or name, update user profile with verified checkout details
+      if (order.user) {
+        try {
+          const userToUpdate = await User.findById(order.user);
+          if (userToUpdate) {
+            let shouldUpdateUser = false;
+            const updateFields = {};
+            if ((!userToUpdate.phone && !userToUpdate.mobile) && parsed.phone && /^\d{10}$/.test(parsed.phone)) {
+              updateFields.phone = parsed.phone;
+              updateFields.mobile = parsed.phone;
+              shouldUpdateUser = true;
+            }
+            if ((!userToUpdate.name && !userToUpdate.fullName) && parsed.name && parsed.name !== "Customer") {
+              updateFields.name = parsed.name;
+              updateFields.fullName = parsed.name;
+              shouldUpdateUser = true;
+            }
+            if (shouldUpdateUser) {
+              await User.findByIdAndUpdate(order.user, updateFields);
+            }
+          }
+
+          // If user has no saved addresses in Address collection, save this valid address
+          const Address = require("../models/address");
+          const existingAddr = await Address.findOne({ user: order.user });
+          if (!existingAddr && parsed.address && parsed.address !== "Customer Address") {
+            await Address.create({
+              user: order.user,
+              name: parsed.name,
+              phone: parsed.phone,
+              email: parsed.email || userToUpdate?.email || "",
+              address: parsed.address,
+              address2: parsed.address2 || "",
+              city: parsed.city,
+              state: parsed.state,
+              pincode: parsed.pincode,
+              country: parsed.country || "India",
+              isDefault: true,
+            });
+          }
+        } catch (syncErr) {
+          console.warn("[Address] Could not auto-sync address/user details:", syncErr.message);
+        }
+      }
+
       return true;
     }
     return false;
@@ -1142,24 +1190,69 @@ const createPayment = async (req, res) => {
     ).replace(/\/+$/, "");
 
     const userDoc = await User.findById(userId).lean();
-    const customerPhone = normalizePhone(userDoc?.phone || "");
-    const customerEmail = userDoc?.email || "";
-    const customerName = userDoc?.name || "";
+    const Address = require("../models/address");
+    const userSavedAddress = await Address.findOne({ user: userId })
+      .sort({ isDefault: -1, updatedAt: -1 })
+      .lean();
+
+    const candidateAddress =
+      (userSavedAddress && userSavedAddress.address && userSavedAddress.address !== "Customer Address"
+        ? userSavedAddress
+        : null) ||
+      (order.shippingAddress && order.shippingAddress.address && order.shippingAddress.address !== "Customer Address"
+        ? order.shippingAddress
+        : null);
+
+    const rawCustomerName =
+      userDoc?.name ||
+      userDoc?.fullName ||
+      candidateAddress?.name ||
+      "";
+
+    const customerName = String(rawCustomerName || "").trim();
+
+    const customerEmail = String(
+      userDoc?.email || candidateAddress?.email || ""
+    ).trim();
+
+    const rawPhone =
+      userDoc?.phone ||
+      userDoc?.mobile ||
+      candidateAddress?.phone ||
+      "";
+
+    const customerPhone = normalizePhone(rawPhone);
+
+    const customerPayload = {
+      ...(customerEmail ? { email: customerEmail } : {}),
+      ...(customerName ? { name: customerName } : {}),
+      ...(customerPhone ? { phone: customerPhone } : {}),
+    };
 
     const payload = {
       cart_data: {
         items,
       },
-      customer: {
-        phone: customerPhone,
-        email: customerEmail,
-        name: customerName,
-      },
+      customer: customerPayload,
       redirect_url:
         `${frontendUrl}/payment/success` +
         `?orderId=${encodeURIComponent(order.orderId)}`,
       timestamp: new Date().toISOString(),
     };
+
+    if (candidateAddress && candidateAddress.address && candidateAddress.address !== "Customer Address") {
+      const addressPhone = normalizePhone(candidateAddress.phone) || customerPhone || "";
+      payload.shipping_address = {
+        name: candidateAddress.name || customerName || "Customer",
+        phone: addressPhone,
+        address: candidateAddress.address || "",
+        address2: candidateAddress.address2 || "",
+        city: candidateAddress.city || "",
+        state: candidateAddress.state || "",
+        pincode: String(candidateAddress.pincode || ""),
+        country: candidateAddress.country || "India",
+      };
+    }
 
     console.log("========================================");
     console.log("CREATING FASTRR CHECKOUT");

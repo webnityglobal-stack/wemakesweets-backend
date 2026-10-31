@@ -238,9 +238,9 @@ const login = async (req, res) => {
 
       user: {
         id: user._id,
-        name: user.name,
+        name: user.name || user.fullName || "",
         email: user.email,
-        phone: user.phone,
+        phone: user.phone || user.mobile || "",
         role: user.role,
       },
     });
@@ -707,9 +707,9 @@ const verifyWhatsAppLoginOTP = async (req, res) => {
       token,
       user: {
         id: user._id,
-        name: user.name,
+        name: user.name || user.fullName || "",
         email: user.email,
-        phone: user.phone,
+        phone: user.phone || user.mobile || "",
         role: user.role,
       },
     });
