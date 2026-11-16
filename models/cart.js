@@ -24,14 +24,6 @@ const cartItemSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
-
-    // variant: {
-    //   _id: String,
-    //   title: String,
-    //   salePrice: Number,
-    //   mrp: Number,
-    //   sku: String,
-    // },
   },
   {
     _id: true,
@@ -43,8 +35,16 @@ const cartSchema = new mongoose.Schema(
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
-      unique: true,
+      default: null,
+      sparse: true,
+      index: true,
+    },
+
+    guestId: {
+      type: String,
+      default: null,
+      sparse: true,
+      index: true,
     },
 
     items: [cartItemSchema],
@@ -59,4 +59,5 @@ const cartSchema = new mongoose.Schema(
   }
 );
 
-module.exports = mongoose.model("Cart", cartSchema);
+module.exports =
+  mongoose.models.Cart || mongoose.model("Cart", cartSchema);

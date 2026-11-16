@@ -17,6 +17,80 @@ const whatsappService = require("../services/whatsappService");
 // CREATE / PLACE ORDER
 // =====================================================
 
+const extractObjectId = (value) => {
+  if (!value) return null;
+  if (typeof value === "object") {
+    const nested = value._id || value.id || null;
+    return nested ? String(nested).trim() : null;
+  }
+  const str = String(value).trim();
+  if (!str || ["null", "undefined"].includes(str.toLowerCase())) {
+    return null;
+  }
+  return str;
+};
+
+const toNonNegativeNumber = (value, fallback = 0) => {
+  const num = Number(value);
+  return Number.isFinite(num) && num >= 0 ? num : fallback;
+};
+
+const normalizeOrderShippingAddress = (rawAddress, fallback = null) => {
+  if (!rawAddress || typeof rawAddress !== "object") return null;
+
+  const line1 = String(
+    rawAddress.line1 ||
+      rawAddress.address1 ||
+      rawAddress.address ||
+      rawAddress.address_line1 ||
+      ""
+  ).trim();
+
+  if (!line1 || line1 === "Customer Address") return null;
+
+  const rawFullName = [
+    rawAddress.first_name || rawAddress.firstName,
+    rawAddress.last_name || rawAddress.lastName,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  const digits = String(
+    rawAddress.phone ||
+      rawAddress.mobile ||
+      rawAddress.phone_number ||
+      fallback?.phone ||
+      "9999999999"
+  )
+    .replace(/\D/g, "")
+    .slice(-10);
+
+  return {
+    name:
+      String(rawAddress.name || rawFullName || fallback?.name || "").trim() ||
+      "Customer",
+    phone: /^\d{10}$/.test(digits) ? digits : "9999999999",
+    email: String(rawAddress.email || fallback?.email || "").trim(),
+    address: line1,
+    address2: String(
+      rawAddress.line2 || rawAddress.address2 || rawAddress.address_line2 || ""
+    ).trim(),
+    city: String(rawAddress.city || "").trim() || "Meerut",
+    state:
+      String(rawAddress.state || rawAddress.province || "").trim() ||
+      "Uttar Pradesh",
+    pincode:
+      String(
+        rawAddress.pincode ||
+          rawAddress.zip ||
+          rawAddress.postal_code ||
+          ""
+      ).trim() || "250002",
+    country: String(rawAddress.country || "").trim() || "India",
+  };
+};
+
 const createOrder = async (req, res) => {
   try {
     const {
@@ -33,38 +107,41 @@ const createOrder = async (req, res) => {
       .trim()
       .toUpperCase();
 
+        // =================================================
+    // AUTHENTICATION & GUEST CHECK
     // =================================================
-    // AUTHENTICATION
-    // =================================================
-
-    if (
-      !req.user ||
-      !req.user.userId
-    ) {
-      return res.status(401).json({
-        success: false,
-        message:
-          "Authentication required",
-      });
-    }
 
     const userId =
-      req.user.userId;
+      req.userId ||
+      req.user?.userId ||
+      null;
 
-    const user =
-      await User.findById(
-        userId
-      );
-
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message:
-          "User not found",
-      });
+    let user = null;
+    if (userId) {
+      const validUserId = userId && mongoose.isValidObjectId(userId) ? userId : null;
+      user = validUserId ? await User.findById(validUserId) : null;
     }
 
+    const validOrderUserId = userId && mongoose.isValidObjectId(userId) ? userId : null;
+    const isGuest = !validOrderUserId;
+    let guestId = isGuest
+      ? (req.guestId ||
+          req.headers["x-guest-id"] ||
+          req.headers["guest-id"] ||
+          req.body?.guestId ||
+          req.query?.guestId ||
+          `guest_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`)
+      : null;
+
     // =================================================
+    if (isGuest) {
+      const cleanedGuest = guestId ? String(guestId).trim() : "";
+      guestId =
+        cleanedGuest && !["null", "undefined"].includes(cleanedGuest.toLowerCase())
+          ? cleanedGuest
+          : `guest_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    }
+
     // VALIDATE ITEMS
     // =================================================
 
@@ -126,7 +203,8 @@ const createOrder = async (req, res) => {
       // PRODUCT ID
       // -----------------------------------------------
 
-      if (!item.product) {
+      const resolvedProductId = extractObjectId(item?.product) || extractObjectId(item?.productId);
+      if (!resolvedProductId) {
         return res.status(400).json({
           success: false,
           message:
@@ -158,16 +236,23 @@ const createOrder = async (req, res) => {
       // PRODUCT
       // -----------------------------------------------
 
+      if (!mongoose.isValidObjectId(resolvedProductId)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid product ID: ${resolvedProductId}`,
+        });
+      }
+
       const product =
         await Product.findById(
-          item.product
+          resolvedProductId
         );
 
       if (!product) {
         return res.status(404).json({
           success: false,
           message:
-            `Product not found: ${item.product}`,
+            `Product not found: ${resolvedProductId}`,
         });
       }
 
@@ -177,17 +262,18 @@ const createOrder = async (req, res) => {
 
       let variant = null;
 
-      if (item.variantId) {
+      const resolvedVariantId = extractObjectId(item?.variantId);
+      if (resolvedVariantId) {
         variant =
           product.variants.id(
-            item.variantId
+            resolvedVariantId
           );
 
         if (!variant) {
           return res.status(400).json({
             success: false,
             message:
-              `Variant not found for ${item.variantId}`,
+              `Variant not found for ${resolvedVariantId}`,
           });
         }
 
@@ -267,7 +353,7 @@ const createOrder = async (req, res) => {
           : product.name,
 
         sku: variant
-          ? variant.sku
+          ? (String(variant.sku || "").trim() || product._id.toString())
           : product._id.toString(),
 
         quantity,
@@ -279,19 +365,19 @@ const createOrder = async (req, res) => {
         // =================================================
 
         weight: variant
-          ? Number(variant.weight)
+          ? toNonNegativeNumber(variant.weight)
           : 0,
 
         length: variant
-          ? Number(variant.length)
+          ? toNonNegativeNumber(variant.length)
           : 0,
 
         breadth: variant
-          ? Number(variant.breadth)
+          ? toNonNegativeNumber(variant.breadth)
           : 0,
 
         height: variant
-          ? Number(variant.height)
+          ? toNonNegativeNumber(variant.height)
           : 0,
       });
     }
@@ -325,16 +411,16 @@ const createOrder = async (req, res) => {
     // =================================================
     let initialShippingAddress = null;
 
-    if (
+        if (
       req.body.shippingAddress &&
       typeof req.body.shippingAddress === "object" &&
-      req.body.shippingAddress.address &&
+      String(req.body.shippingAddress.address || "").trim() &&
       req.body.shippingAddress.address !== "Customer Address"
     ) {
       initialShippingAddress = {
-        name: req.body.shippingAddress.name || user.name || "Customer",
-        phone: req.body.shippingAddress.phone || user.phone || "9999999999",
-        email: req.body.shippingAddress.email || user.email || "",
+        name: req.body.shippingAddress.name || user?.name || "Customer",
+        phone: req.body.shippingAddress.phone || user?.phone || "9999999999",
+        email: req.body.shippingAddress.email || user?.email || "",
         address: req.body.shippingAddress.address,
         address2: req.body.shippingAddress.address2 || "",
         city: req.body.shippingAddress.city || "Meerut",
@@ -342,7 +428,7 @@ const createOrder = async (req, res) => {
         pincode: String(req.body.shippingAddress.pincode || "250002"),
         country: req.body.shippingAddress.country || "India",
       };
-    } else {
+    } else if (validOrderUserId) {
       const Address = require("../models/address");
       const savedAddress = await Address.findOne({ user: userId })
         .sort({ isDefault: -1, updatedAt: -1 })
@@ -354,9 +440,9 @@ const createOrder = async (req, res) => {
         savedAddress.address !== "Customer Address"
       ) {
         initialShippingAddress = {
-          name: savedAddress.name || user.name || "Customer",
-          phone: savedAddress.phone || user.phone || "9999999999",
-          email: savedAddress.email || user.email || "",
+          name: savedAddress.name || user?.name || "Customer",
+          phone: savedAddress.phone || user?.phone || "9999999999",
+          email: savedAddress.email || user?.email || "",
           address: savedAddress.address,
           address2: savedAddress.address2 || "",
           city: savedAddress.city || "Meerut",
@@ -382,13 +468,19 @@ const createOrder = async (req, res) => {
     }
 
     // =================================================
+    initialShippingAddress = normalizeOrderShippingAddress(initialShippingAddress, user);
+
     // CREATE ORDER
     // =================================================
 
     const order =
       await Order.create({
         user:
-          userId,
+          validOrderUserId || null,
+
+        isGuest,
+
+        guestId,
 
         orderId,
 
@@ -456,7 +548,11 @@ const createOrder = async (req, res) => {
           order.orderId,
 
         user:
-          userId,
+          validOrderUserId || null,
+
+        isGuest,
+
+        guestId,
 
         amount:
           finalTotalAmount,
@@ -492,6 +588,10 @@ const createOrder = async (req, res) => {
 
       message:
         "Order created. Proceed to FastRR checkout.",
+
+      isGuest,
+
+      guestId,
 
       order: {
         id:
@@ -758,13 +858,11 @@ const getOrderById = async (
     } = req.params;
 
     const userId =
+      req.userId ||
       req.user?.userId ||
-      req.userId;
+      null;
 
-    const query = {
-      user:
-        userId,
-    };
+    const query = {};
 
     if (
       mongoose.isValidObjectId(
@@ -795,6 +893,13 @@ const getOrderById = async (
         success: false,
         message:
           "Order not found",
+      });
+    }
+
+    if (order.user && userId && order.user.toString() !== userId.toString() && req.user?.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied to this order",
       });
     }
 
@@ -942,14 +1047,22 @@ const cancelOrder = async (
 ) => {
   try {
     const userId =
+      req.userId ||
       req.user?.userId ||
-      req.userId;
+      null;
 
     const id = req.params.id;
 
-    const query = {
-      user: userId,
-    };
+    const query = {};
+    if (userId && req.user?.role !== "admin") {
+      query.user = userId;
+    }
+
+    if (mongoose.isValidObjectId(id)) {
+      query._id = id;
+    } else {
+      query.orderId = id;
+    }
 
     if (mongoose.isValidObjectId(id)) {
       query._id = id;
@@ -1191,24 +1304,22 @@ const updateOrderStatus =
 
 const updateShippingAddress = async (req, res) => {
   try {
-    const userId = req.user?.userId;
+    const userId = req.userId || req.user?.userId || null;
     const { id } = req.params;
     const { shippingAddress } = req.body;
 
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        message: "Unauthorized",
-      });
-    }
-
-    const order = await Order.findOne({
+    const query = {
       $or: [
         { orderId: id },
         { _id: mongoose.isValidObjectId(id) ? id : null },
       ],
-      user: userId,
-    });
+    };
+
+    if (userId && req.user?.role !== "admin") {
+      query.user = userId;
+    }
+
+    const order = await Order.findOne(query);
 
     if (!order) {
       return res.status(404).json({
@@ -1252,13 +1363,13 @@ const updateShippingAddress = async (req, res) => {
             shippingAddress.email ||
             order.shippingAddress?.email ||
             "",
-          address: line1,
+          address: String(line1).trim(),
           address2:
             shippingAddress.line2 ||
             shippingAddress.address2 ||
             shippingAddress.address_line2 ||
             "",
-          city: shippingAddress.city || "Meerut",
+          city: String(shippingAddress.city || "").trim() || "Meerut",
           state:
             shippingAddress.state ||
             shippingAddress.province ||

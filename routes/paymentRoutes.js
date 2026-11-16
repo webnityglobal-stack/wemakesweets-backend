@@ -12,51 +12,46 @@ const {
   getCheckoutAddress,
 } = require("../controllers/paymentController");
 
-const authMiddleware =
-  require("../middleware/authMiddleware");
-
+const optionalAuthMiddleware = require("../middleware/optionalAuthMiddleware");
 
 // =====================================================
-// CREATE ONLINE PAYMENT
+// CREATE ONLINE PAYMENT (Logged-in & Guest)
 //
 // POST /api/payment/create
 // =====================================================
 
 router.post(
   "/create",
-  authMiddleware,
+  optionalAuthMiddleware,
   createPayment
 );
 
-
 // =====================================================
-// PAYMENT SUCCESS / GET STATUS
+// PAYMENT SUCCESS / GET STATUS (Logged-in & Guest)
 //
 // POST /api/payment/success
 // =====================================================
 
 router.post(
   "/success",
-  authMiddleware,
+  optionalAuthMiddleware,
   paymentSuccess
 );
 
-
 // =====================================================
-// VERIFY PAYMENT & SYNC FASTRR ORDER
+// VERIFY PAYMENT & SYNC FASTRR ORDER (Logged-in & Guest)
 //
 // POST /api/payment/verify
 // =====================================================
 
 router.post(
   "/verify",
-  authMiddleware,
+  optionalAuthMiddleware,
   verifyPayment
 );
 
-
 // =====================================================
-// PAYMENT FAILED / CANCEL
+// PAYMENT FAILED / CANCEL (Logged-in & Guest)
 //
 // POST /api/payment/failed
 // POST /api/payment/cancel
@@ -64,16 +59,15 @@ router.post(
 
 router.post(
   "/failed",
-  authMiddleware,
+  optionalAuthMiddleware,
   paymentFailed
 );
 
 router.post(
   "/cancel",
-  authMiddleware,
+  optionalAuthMiddleware,
   paymentFailed
 );
-
 
 // =====================================================
 // FASTRR WEBHOOK
@@ -89,34 +83,28 @@ router.post(
   fastrrWebhook
 );
 
-
 // =====================================================
-// GET FASTRR CHECKOUT DETAILS
+// GET FASTRR CHECKOUT DETAILS (Logged-in & Guest)
 //
 // GET /api/payment/checkout-address/:orderId
-//
-// IMPORTANT:
-// This must come BEFORE /:paymentId
 // =====================================================
 
 router.get(
   "/checkout-address/:orderId",
-  authMiddleware,
+  optionalAuthMiddleware,
   getCheckoutAddress
 );
 
-
 // =====================================================
-// GET PAYMENT
+// GET PAYMENT (Logged-in & Guest)
 //
 // GET /api/payment/:paymentId
 // =====================================================
 
 router.get(
   "/:paymentId",
-  authMiddleware,
+  optionalAuthMiddleware,
   getPayment
 );
-
 
 module.exports = router;

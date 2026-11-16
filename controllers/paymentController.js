@@ -1,5 +1,6 @@
 // controllers/paymentController.js
 
+const mongoose = require("mongoose");
 const Order = require("../models/order");
 const Payment = require("../models/payment");
 const Product = require("../models/product");
@@ -1014,13 +1015,6 @@ const createPayment = async (req, res) => {
     const userId = getUserId(req);
     const { orderId } = req.body;
 
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        message: "Unauthorized",
-      });
-    }
-
     if (!orderId) {
       return res.status(400).json({
         success: false,
@@ -1030,8 +1024,21 @@ const createPayment = async (req, res) => {
 
     const order = await Order.findOne({
       orderId,
-      user: userId,
     }).populate("items.product");
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    if (order.user && userId && order.user.toString() !== userId.toString() && req.user?.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied to this order",
+      });
+    }
 
     if (!order) {
       return res.status(404).json({
@@ -1064,14 +1071,15 @@ const createPayment = async (req, res) => {
 
     let payment = await Payment.findOne({
       order: order._id,
-      user: userId,
     });
 
     if (!payment) {
       payment = await Payment.create({
         order: order._id,
         orderId: order.orderId,
-        user: userId,
+        user: order.user || userId || null,
+        isGuest: order.isGuest || !order.user,
+        guestId: order.guestId || req.guestId || null,
         amount,
         currency: "INR",
         paymentMethod: order.paymentMethod,
@@ -1176,25 +1184,36 @@ const createPayment = async (req, res) => {
       process.env.FRONTEND_URL || "https://wemakesweets.com"
     ).replace(/\/+$/, "");
 
-    const userDoc = await User.findById(userId).lean();
-    const customerPhone = normalizePhone(userDoc?.phone || "");
-    const customerEmail = userDoc?.email || "";
-    const customerName = userDoc?.name || "";
+    const activeUserId = userId || order.user;
+    const userDoc = activeUserId && mongoose.isValidObjectId(activeUserId) ? await User.findById(activeUserId).lean() : null;
+    const customerPhone = userDoc?.phone
+      ? normalizePhone(userDoc.phone)
+      : (order.shippingAddress?.phone ? normalizePhone(order.shippingAddress.phone) : "");
+    const customerEmail = userDoc?.email || order.shippingAddress?.email || "";
+    const customerName = userDoc?.name || order.shippingAddress?.name || "";
 
     const payload = {
       cart_data: {
         items,
-      },
-      customer: {
-        phone: customerPhone,
-        email: customerEmail,
-        name: customerName,
       },
       redirect_url:
         `${frontendUrl}/payment/success` +
         `?orderId=${encodeURIComponent(order.orderId)}`,
       timestamp: new Date().toISOString(),
     };
+
+    if (customerPhone && customerPhone !== "9999999999") {
+      payload.customer = {
+        phone: customerPhone,
+        email: customerEmail,
+        name: customerName,
+      };
+    } else if (customerEmail || customerName) {
+      payload.customer = {
+        email: customerEmail,
+        name: customerName,
+      };
+    }
 
     // Resolve shipping address for FastRR prefill
     let resolvedAddress = null;
@@ -1206,7 +1225,9 @@ const createPayment = async (req, res) => {
       resolvedAddress = order.shippingAddress;
     } else {
       const Address = require("../models/address");
-      const savedAddress = await Address.findOne({ user: userId })
+      const savedAddress = !(activeUserId && mongoose.isValidObjectId(activeUserId))
+        ? null
+        : await Address.findOne({ user: activeUserId })
         .sort({ isDefault: -1, updatedAt: -1 })
         .lean();
       if (
@@ -1320,25 +1341,31 @@ const paymentSuccess = async (req, res) => {
     const userId = getUserId(req);
     const { paymentId, orderId, gatewayOrderId } = req.body;
 
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        message: "Unauthorized",
-      });
-    }
-
     let payment = null;
     if (paymentId) {
-      payment = await Payment.findOne({ _id: paymentId, user: userId });
+      payment = await Payment.findById(paymentId);
     }
     if (!payment && gatewayOrderId) {
       payment = await Payment.findOne({
         gatewayOrderId: String(gatewayOrderId),
-        user: userId,
       });
     }
     if (!payment && orderId) {
-      payment = await Payment.findOne({ orderId, user: userId });
+      payment = await Payment.findOne({ orderId });
+    }
+
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: "Payment not found",
+      });
+    }
+
+    if (payment.user && userId && payment.user.toString() !== userId.toString() && req.user?.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied to this payment",
+      });
     }
 
     if (!payment) {
@@ -1431,9 +1458,7 @@ const verifyPayment = async (req, res) => {
 
     let order = null;
     if (orderId) {
-      const query = { orderId: String(orderId) };
-      if (userId) query.user = userId;
-      order = await Order.findOne(query).populate("items.product");
+      order = await Order.findOne({ orderId: String(orderId) }).populate("items.product");
     }
 
     let payment = null;
@@ -1551,25 +1576,17 @@ const paymentFailed = async (req, res) => {
     const { paymentId, orderId, gatewayOrderId, reason, failureReason } =
       req.body;
 
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        message: "Unauthorized",
-      });
-    }
-
     let payment = null;
     if (paymentId) {
-      payment = await Payment.findOne({ _id: paymentId, user: userId });
+      payment = await Payment.findById(paymentId);
     }
     if (!payment && gatewayOrderId) {
       payment = await Payment.findOne({
         gatewayOrderId: String(gatewayOrderId),
-        user: userId,
       });
     }
     if (!payment && orderId) {
-      payment = await Payment.findOne({ orderId, user: userId });
+      payment = await Payment.findOne({ orderId });
     }
 
     let order = null;
@@ -1577,9 +1594,9 @@ const paymentFailed = async (req, res) => {
       order = await Order.findById(payment.order);
     }
     if (!order && orderId) {
-      order = await Order.findOne({ orderId, user: userId });
+      order = await Order.findOne({ orderId });
       if (order && !payment) {
-        payment = await Payment.findOne({ order: order._id, user: userId });
+        payment = await Payment.findOne({ order: order._id });
       }
     }
 
@@ -1895,17 +1912,11 @@ const getPayment = async (req, res) => {
     const userId = getUserId(req);
     const { paymentId } = req.params;
 
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        message: "Unauthorized",
-      });
-    }
+    const query = mongoose.isValidObjectId(paymentId)
+      ? { _id: paymentId }
+      : { orderId: paymentId };
 
-    const payment = await Payment.findOne({
-      _id: paymentId,
-      user: userId,
-    })
+    const payment = await Payment.findOne(query)
       .populate(
         "order",
         "orderId totalAmount paymentStatus orderStatus paymentMethod shippingAddress"
@@ -1958,13 +1969,6 @@ const getCheckoutAddress = async (req, res) => {
     const userId = getUserId(req);
     const { orderId } = req.params;
 
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        message: "Unauthorized",
-      });
-    }
-
     if (!orderId) {
       return res.status(400).json({
         success: false,
@@ -1974,7 +1978,6 @@ const getCheckoutAddress = async (req, res) => {
 
     const order = await Order.findOne({
       orderId: String(orderId),
-      user: userId,
     });
 
     if (!order) {
@@ -1984,9 +1987,15 @@ const getCheckoutAddress = async (req, res) => {
       });
     }
 
+    if (order.user && userId && order.user.toString() !== userId.toString() && req.user?.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied to this order",
+      });
+    }
+
     const payment = await Payment.findOne({
       order: order._id,
-      user: userId,
     });
 
     if (!payment) {

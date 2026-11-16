@@ -11,55 +11,54 @@ const {
 } = require("../controllers/orderController");
 
 const authMiddleware = require("../middleware/authMiddleware");
+const optionalAuthMiddleware = require("../middleware/optionalAuthMiddleware");
 
 const router = express.Router();
 
-
 // ==========================================
-// CUSTOMER ROUTES
+// CUSTOMER ROUTES (Logged-in & Guest)
 // ==========================================
 
-// Create new order
+// Create new order (Buy Now or Cart Checkout)
 router.post(
   "/create",
-  authMiddleware,
+  optionalAuthMiddleware,
   createOrder
 );
 
 // Update order shipping address
 router.patch(
   "/:id/shipping-address",
-  authMiddleware,
+  optionalAuthMiddleware,
   updateShippingAddress
 );
 
-// Get logged-in user's orders
+// Get logged-in user's order history
 router.get(
   "/my-orders",
   authMiddleware,
   getMyOrders
 );
 
-// Get single order
+// Get single order details (Order Success page / Tracking)
 router.get(
   "/:id",
-  authMiddleware,
+  optionalAuthMiddleware,
   getOrderById
 );
 
 // Cancel order
 router.put(
   "/cancel/:id",
-  authMiddleware,
+  optionalAuthMiddleware,
   cancelOrder
 );
 
 router.post(
   "/cancel/:id",
-  authMiddleware,
+  optionalAuthMiddleware,
   cancelOrder
 );
-
 
 // ==========================================
 // ADMIN ROUTES
@@ -78,6 +77,5 @@ router.put(
   authMiddleware,
   updateOrderStatus
 );
-
 
 module.exports = router;

@@ -8,43 +8,51 @@ const {
   updateCartQuantity,
   removeFromCart,
   clearCart,
+  mergeCart,
 } = require("../controllers/cartController");
 
-const authMiddleware = require("../middleware/authMiddleware");
+const optionalAuthMiddleware = require("../middleware/optionalAuthMiddleware");
 
-// Add product to cart
+// Add product to cart (Logged-in or Guest)
 router.post(
   "/add",
-  authMiddleware,
+  optionalAuthMiddleware,
   addToCart
 );
 
-// Get current user's cart
+// Get cart (Logged-in or Guest)
 router.get(
   "/",
-  authMiddleware,
+  optionalAuthMiddleware,
   getCart
 );
 
-// Update quantity
+// Update quantity (Logged-in or Guest)
 router.put(
   "/:itemId",
-  authMiddleware,
+  optionalAuthMiddleware,
   updateCartQuantity
 );
 
-// Remove item
+// Remove item (Logged-in or Guest)
 router.delete(
   "/:itemId",
-  authMiddleware,
+  optionalAuthMiddleware,
   removeFromCart
 );
 
-// Clear cart
+// Clear cart (Logged-in or Guest)
 router.delete(
   "/",
-  authMiddleware,
+  optionalAuthMiddleware,
   clearCart
+);
+
+// Merge guest cart into user cart (When user logs in)
+router.post(
+  "/merge",
+  optionalAuthMiddleware,
+  mergeCart
 );
 
 module.exports = router;

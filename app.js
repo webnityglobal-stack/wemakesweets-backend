@@ -4,10 +4,11 @@ const path = require("path");
 const errorMiddleware = require("./middleware/errorMiddleware");
 const catalogRoutes = require("./routes/catalogRoutes");
 const collectionRoutes = require("./routes/collectionRoutes");
+//
 const imageUploadRoutes = require("./routes/imageUploadRoutes");
 const whatsappRoutes = require("./routes/whatsapp.routes");
 const { getUploadRootDir } = require("./config/storage");
- 
+
 
 const app = express();
 
@@ -22,6 +23,7 @@ app.use(
     origin: [
       "https://wemakesweets.vercel.app",
       "http://localhost:5173",
+      "http://127.0.0.1:5173",
       "http://localhost:5174",
       "https://we-make-sweets-admin.vercel.app",
       "https://darkslategray-horse-285328.hostingersite.com",
@@ -32,7 +34,7 @@ app.use(
       "https://admin.wemakesweets.com"
     ],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-guest-id", "guest-id", "x-session-id"],
   })
 );
 

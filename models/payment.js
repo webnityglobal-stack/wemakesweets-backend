@@ -33,7 +33,20 @@ const paymentSchema = new mongoose.Schema(
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      default: null,
+      sparse: true,
+      index: true,
+    },
+
+    isGuest: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    guestId: {
+      type: String,
+      default: null,
       index: true,
     },
 

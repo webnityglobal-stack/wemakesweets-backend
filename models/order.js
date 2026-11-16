@@ -228,13 +228,27 @@ const shiprocketSchema = new mongoose.Schema(
 const orderSchema = new mongoose.Schema(
   {
     // =================================================
-    // USER
+    // USER (Optional for Guest Checkout)
     // =================================================
 
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      default: null,
+      sparse: true,
+      index: true,
+    },
+
+    isGuest: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    guestId: {
+      type: String,
+      default: null,
+      index: true,
     },
 
     // =================================================
@@ -453,6 +467,7 @@ const orderSchema = new mongoose.Schema(
 // =====================================================
 // PREVENT OVERWRITE MODEL ERROR
 // =====================================================
+//new changes
 
 module.exports =
   mongoose.models.Order ||

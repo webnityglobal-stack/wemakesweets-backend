@@ -1,4 +1,5 @@
 const Product = require("../models/product");
+const mongoose = require("mongoose");
 const Collection = require("../models/Collection");
 const Review = require("../models/review");
 const generateShiprocketId = require("../utils/generateShiprocketId");
@@ -264,32 +265,51 @@ const getProductById = async (
 // GET ALL PRODUCTS
 // =====================================================
 
-const getAllProducts = async (
-  req,
-  res
-) => {
+const getAllProducts = async (req, res) => {
   try {
-    const products =
-      await Product.find().sort({
-        createdAt: -1,
-      });
+    console.log("========== PRODUCT DEBUG ==========");
+
+    console.log(
+      "Connected Database:",
+      mongoose.connection.name
+    );
+
+    console.log(
+      "Product Collection:",
+      Product.collection.name
+    );
+
+    const totalProducts = await Product.countDocuments();
+
+    console.log(
+      "Total Products in Database:",
+      totalProducts
+    );
+
+    const products = await Product.find().sort({
+      createdAt: -1,
+    });
+
+    console.log(
+      "Fetched Products:",
+      products.length
+    );
+
+    console.log("===================================");
 
     return res.status(200).json({
       success: true,
-      count:
-        products.length,
+      count: products.length,
       products,
     });
+
   } catch (error) {
-    console.error(
-      "Get Products Error:",
-      error
-    );
+    console.error("Get Products Error:", error);
 
     return res.status(500).json({
       success: false,
-      message:
-        "Failed to fetch products",
+      message: "Failed to fetch products",
+      error: error.message,
     });
   }
 };
