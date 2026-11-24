@@ -142,9 +142,9 @@ const addAddress = async (req, res) => {
       user: userId,
 
       // Automatically taken from User
-      name: user.name,
-      phone: user.phone,
-      email: user.email,
+      name: (req.body.name && String(req.body.name).trim()) || user.name || "Customer",
+      phone: (req.body.phone && String(req.body.phone).trim()) || user.phone,
+      email: (req.body.email && String(req.body.email).trim()) || user.email || "",
 
       // Address details
       address: address.trim(),

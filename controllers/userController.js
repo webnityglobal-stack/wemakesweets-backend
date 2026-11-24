@@ -2,6 +2,8 @@ const User = require("../models/user");
 const Order = require("../models/order");
 const Wishlist = require("../models/wishlist");
 const Address = require("../models/address");
+const { linkGuestDataToUser } = require("../utils/guestOrderLinker");
+const { getPhoneVariants } = require("../services/msg91Service");
 
 // ==========================================
 // GET ALL USERS - ADMIN
@@ -50,6 +52,9 @@ const getAccount = async (req, res) => {
         message: "User not found",
       });
     }
+
+    // Ensure any guest orders matching this user's phone are linked
+    await linkGuestDataToUser(user, null, { mergeCart: false });
 
     // 2. ORDERS
     const orders = await Order.find({
@@ -209,21 +214,15 @@ const updateMyProfile = async (req, res) => {
       });
     }
 
-    // Email validation
-    if (!email || !email.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: "Email is required",
-      });
-    }
-
     const trimmedName = name.trim();
     const trimmedPhone = phone.trim();
-    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedEmail =
+      email !== undefined && email !== null ? String(email).trim().toLowerCase() : "";
 
-    // Check if phone is already used by another user
+    // Check if phone is already used by another user (across variants)
+    const phoneVariants = getPhoneVariants(trimmedPhone);
     const existingPhoneUser = await User.findOne({
-      phone: trimmedPhone,
+      phone: phoneVariants.length > 0 ? { $in: phoneVariants } : trimmedPhone,
       _id: { $ne: userId },
     });
 
@@ -234,32 +233,39 @@ const updateMyProfile = async (req, res) => {
       });
     }
 
-    // Check if email is already used by another user
-    const existingEmailUser = await User.findOne({
-      email: trimmedEmail,
-      _id: { $ne: userId },
-    });
-
-    if (existingEmailUser) {
-      return res.status(400).json({
-        success: false,
-        message: "Email already registered",
+    // Check email uniqueness only if email is provided
+    if (trimmedEmail) {
+      const existingEmailUser = await User.findOne({
+        email: trimmedEmail,
+        _id: { $ne: userId },
       });
+
+      if (existingEmailUser) {
+        return res.status(400).json({
+          success: false,
+          message: "Email already registered",
+        });
+      }
+    }
+
+    // Build update operation safely (never store empty string for sparse unique email)
+    const updateOps = {
+      $set: {
+        name: trimmedName,
+        phone: trimmedPhone,
+      },
+    };
+    if (trimmedEmail) {
+      updateOps.$set.email = trimmedEmail;
+    } else if (email !== undefined) {
+      updateOps.$unset = { email: "" };
     }
 
     // Update profile
-    const user = await User.findByIdAndUpdate(
-      userId,
-      {
-        name: trimmedName,
-        phone: trimmedPhone,
-        email: trimmedEmail,
-      },
-      {
-        new: true,
-        runValidators: true,
-      }
-    ).select("-password");
+    const user = await User.findByIdAndUpdate(userId, updateOps, {
+      new: true,
+      runValidators: true,
+    }).select("-password");
 
     if (!user) {
       return res.status(404).json({
@@ -309,6 +315,9 @@ const getDashboard = async (req, res) => {
         message: "User not found",
       });
     }
+
+    // Ensure any guest orders matching this user's phone are linked
+    await linkGuestDataToUser(user, null, { mergeCart: false });
 
     // Total orders
     const totalOrders = await Order.countDocuments({

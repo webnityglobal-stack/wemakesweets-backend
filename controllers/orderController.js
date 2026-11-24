@@ -12,6 +12,10 @@ const {
   fetchFastRROrderDetails,
 } = require("../services/fastrrService");
 const whatsappService = require("../services/whatsappService");
+const {
+  linkGuestDataToUser,
+  autoLinkSingleOrderIfUserExists,
+} = require("../utils/guestOrderLinker");
 
 // =====================================================
 // CREATE / PLACE ORDER
@@ -579,6 +583,11 @@ const createOrder = async (req, res) => {
 
     await order.save();
 
+    // Auto-link guest order if an account already exists for this mobile number
+    if (isGuest && order.shippingAddress?.phone) {
+      await autoLinkSingleOrderIfUserExists(order);
+    }
+
     // =================================================
     // RESPONSE
     // =================================================
@@ -674,6 +683,14 @@ const getMyOrders = async (
       req.userId ||
       req.user?.userId;
 
+    // Auto-link any guest orders placed with this user's mobile number
+    if (userId && mongoose.isValidObjectId(userId)) {
+      const currentUser = await User.findById(userId).select("_id phone name email");
+      if (currentUser) {
+        await linkGuestDataToUser(currentUser, null, { mergeCart: false });
+      }
+    }
+
     const orders =
       await Order.find({
         user:
@@ -695,7 +712,7 @@ const getMyOrders = async (
       (o) =>
         (o.paymentMethod === "ONLINE" &&
           (o.paymentStatus === "PROCESSING" || o.paymentStatus === "PENDING") &&
-          o.orderStatus === "PENDING") ||
+          (o.orderStatus === "PENDING" || o.orderStatus === "PROCESSING")) ||
         (o.orderStatus === "CONFIRMED" && (!o.shiprocket?.orderId || !o.fastrrSyncedAt))
     );
 
@@ -717,6 +734,7 @@ const getMyOrders = async (
               if (isPaymentSuccessful(null, checkoutDetails, null)) {
                 await syncFastrrOrder(o, payment, checkoutDetails, null);
               } else if (isPaymentFailed(null, checkoutDetails, null)) {
+                // FastRR ne explicitly failed bataya
                 await markOrderAndPaymentFailed(
                   o,
                   payment,
@@ -728,40 +746,39 @@ const getMyOrders = async (
                 o.orderStatus = "CANCELLED";
                 o.paymentStatus = "FAILED";
               } else if (
-                o.orderStatus === "PENDING" &&
-                o.paymentMethod === "ONLINE" &&
-                Date.now() - new Date(o.createdAt).getTime() > 60 * 1000
+                (o.paymentStatus === "PROCESSING" || o.paymentStatus === "PENDING") &&
+                o.paymentMethod === "ONLINE"
               ) {
-                // If online order stayed in PENDING > 60s and payment not completed, mark CANCELLED & FAILED
+                // Payment complete nahi hui (user ne cancel kiya ya timeout) — FAILED mark karo
                 await markOrderAndPaymentFailed(
                   o,
                   payment,
-                  "Checkout backed out / payment not completed",
+                  "Payment not completed / cancelled by user",
                   checkoutDetails
                 );
                 o.orderStatus = "CANCELLED";
                 o.paymentStatus = "FAILED";
               }
             } catch (syncErr) {
+              // FastRR se connect nahi ho saka — PROCESSING orders ko bhi fail karo
               if (
-                o.orderStatus === "PENDING" &&
-                o.paymentMethod === "ONLINE" &&
-                Date.now() - new Date(o.createdAt).getTime() > 60 * 1000
+                (o.paymentStatus === "PROCESSING" || o.paymentStatus === "PENDING") &&
+                o.paymentMethod === "ONLINE"
               ) {
                 await markOrderAndPaymentFailed(
                   o,
                   payment,
-                  "Checkout backed out / payment not completed"
+                  "Payment not completed / checkout cancelled"
                 );
                 o.orderStatus = "CANCELLED";
                 o.paymentStatus = "FAILED";
               }
             }
           } else if (
-            o.orderStatus === "PENDING" &&
-            o.paymentMethod === "ONLINE" &&
-            Date.now() - new Date(o.createdAt).getTime() > 60 * 1000
+            (o.paymentStatus === "PROCESSING" || o.paymentStatus === "PENDING") &&
+            o.paymentMethod === "ONLINE"
           ) {
+            // Gateway order ID bhi nahi hai — payment kab tak initiate nahi hua
             await markOrderAndPaymentFailed(
               o,
               payment,
@@ -876,7 +893,7 @@ const getOrderById = async (
         id;
     }
 
-    const order =
+    let order =
       await Order.findOne(
         query
       )
@@ -901,6 +918,20 @@ const getOrderById = async (
         success: false,
         message: "Access denied to this order",
       });
+    }
+
+    // If logged-in customer views their own previously-guest order, link it on the fly
+    if (!order.user && userId && mongoose.isValidObjectId(userId)) {
+      const currentUser = await User.findById(userId).select("_id phone name email");
+      if (currentUser) {
+        const linked = await linkGuestDataToUser(currentUser, req.guestId || null, {
+          mergeCart: false,
+        });
+        if (linked.linkedOrderIds.some((oid) => oid.toString() === order._id.toString())) {
+          order.user = currentUser._id;
+          order.isGuest = false;
+        }
+      }
     }
 
     // Auto-sync with FastRR if order is not confirmed, shiprocket not created, or not synced
@@ -954,18 +985,39 @@ const getOrderById = async (
                 order: syncedOrder,
               });
             }
-          } else if (
-            isPaymentFailed(null, checkoutDetails, null) ||
-            (order.orderStatus === "PENDING" &&
-              order.paymentMethod === "ONLINE" &&
-              Date.now() - new Date(order.createdAt).getTime() > 60 * 1000)
-          ) {
+          } else if (isPaymentFailed(null, checkoutDetails, null)) {
+            // FastRR ne explicitly failed bataya
             await markOrderAndPaymentFailed(
               order,
               payment,
               checkoutDetails?.result?.error ||
                 checkoutDetails?.message ||
                 "Payment cancelled / checkout backed out",
+              checkoutDetails
+            );
+            const syncedOrder = await Order.findById(order._id)
+              .populate("items.product", "name salePrice images sku variants")
+              .populate("paymentId");
+            if (syncedOrder) {
+              return res.status(200).json({
+                success: true,
+                order: syncedOrder,
+              });
+            }
+          } else if (
+            (order.paymentStatus === "PROCESSING" || order.paymentStatus === "PENDING") &&
+            order.paymentMethod === "ONLINE"
+          ) {
+            // User ne cancel kiya — payment complete nahi hui, FAILED mark karo
+            console.log(
+              `[OrderById] ONLINE payment not completed for ${order.orderId}, marking FAILED.`
+            );
+            await markOrderAndPaymentFailed(
+              order,
+              payment,
+              checkoutDetails?.result?.error ||
+                checkoutDetails?.message ||
+                "Payment not completed / cancelled by user",
               checkoutDetails
             );
             const syncedOrder = await Order.findById(order._id)
@@ -1055,13 +1107,15 @@ const cancelOrder = async (
 
     const query = {};
     if (userId && req.user?.role !== "admin") {
+      if (mongoose.isValidObjectId(userId)) {
+        const currentUser = await User.findById(userId).select("_id phone name email");
+        if (currentUser) {
+          await linkGuestDataToUser(currentUser, req.guestId || null, {
+            mergeCart: false,
+          });
+        }
+      }
       query.user = userId;
-    }
-
-    if (mongoose.isValidObjectId(id)) {
-      query._id = id;
-    } else {
-      query.orderId = id;
     }
 
     if (mongoose.isValidObjectId(id)) {
@@ -1385,6 +1439,11 @@ const updateShippingAddress = async (req, res) => {
 
         order.markModified("shippingAddress");
         await order.save();
+
+        // Auto-link guest order if an account already exists for this mobile number
+        if (!order.user && order.shippingAddress?.phone) {
+          await autoLinkSingleOrderIfUserExists(order);
+        }
       }
     }
 

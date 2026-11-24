@@ -1,6 +1,7 @@
 const User = require("../models/user");
 const Product = require("../models/product");
 const Order = require("../models/order");
+const Payment = require("../models/payment");
 const bcrypt = require("bcryptjs");
 const mongoose = require("mongoose");
 const whatsappService = require("../services/whatsappService");
@@ -882,6 +883,59 @@ const getAllOrders = async (req, res) => {
         totalOrders /
           limitNumber
       );
+
+    // =================================================
+    // AUTO-FIX: ONLINE orders jo PROCESSING/PENDING mein stuck hain
+    // Background mein silently fix karo — response delay mat karo
+    // =================================================
+    try {
+      const { markOrderAndPaymentFailed, isPaymentSuccessful, isPaymentFailed } = require("./paymentController");
+      const { fetchFastRROrderDetails } = require("../services/fastrrService");
+
+      const stuckOrders = orders.filter(
+        (o) =>
+          o.paymentMethod === "ONLINE" &&
+          (o.paymentStatus === "PROCESSING" || o.paymentStatus === "PENDING") &&
+          (o.orderStatus === "PENDING" || o.orderStatus === "PROCESSING")
+      );
+
+      if (stuckOrders.length > 0) {
+        // Fire-and-forget — response block nahi karta
+        (async () => {
+          for (const o of stuckOrders) {
+            try {
+              const payment = await Payment.findOne({ order: o._id });
+              if (payment && payment.gatewayOrderId) {
+                try {
+                  const checkoutDetails = await fetchFastRROrderDetails(String(payment.gatewayOrderId));
+                  if (isPaymentSuccessful(null, checkoutDetails, null)) {
+                    // Payment actually success hai — chhod do
+                    console.log(`[AdminOrders] Skipping ${o.orderId} — FastRR shows SUCCESS`);
+                    continue;
+                  }
+                } catch (_) {}
+              }
+              // Payment complete nahi hui — FAILED mark karo
+              const freshOrder = await Order.findById(o._id);
+              const freshPayment = await Payment.findOne({ order: o._id });
+              if (freshOrder && (freshOrder.paymentStatus === "PROCESSING" || freshOrder.paymentStatus === "PENDING")) {
+                await markOrderAndPaymentFailed(
+                  freshOrder,
+                  freshPayment,
+                  "Payment not completed / cancelled by user",
+                  null
+                );
+                console.log(`[AdminOrders] Auto-fixed stuck order: ${o.orderId} → FAILED/CANCELLED`);
+              }
+            } catch (fixErr) {
+              console.warn(`[AdminOrders] Could not fix order ${o.orderId}:`, fixErr.message);
+            }
+          }
+        })();
+      }
+    } catch (autoFixErr) {
+      console.warn("[AdminOrders] Auto-fix error:", autoFixErr.message);
+    }
 
     // =================================================
     // RESPONSE

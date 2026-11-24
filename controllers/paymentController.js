@@ -19,6 +19,7 @@ const {
 } = require("../services/shiprocketService");
 
 const whatsappService = require("../services/whatsappService");
+const { autoLinkSingleOrderIfUserExists } = require("../utils/guestOrderLinker");
 
 // =====================================================
 // HELPER: GET USER ID
@@ -315,6 +316,11 @@ const resolveAndSaveOrderAddress = async (
       order.markModified("shippingAddress");
       await order.save();
 
+      // Auto-link guest order if an account already exists for this mobile number
+      if (!order.user && parsed.phone) {
+        await autoLinkSingleOrderIfUserExists(order);
+      }
+
       // Persist to user's Address collection so future checkouts automatically have it
       if (order.user && parsed.address && parsed.address !== "Customer Address") {
         try {
@@ -567,6 +573,24 @@ const markOrderAndPaymentFailed = async (
         payment.gatewayResponse = gatewayResponse;
       }
       await payment.save();
+    } else if (order) {
+      // Payment document nahi mila — try karo order se find karke
+      try {
+        const foundPayment = await Payment.findOne({ order: order._id });
+        if (foundPayment && foundPayment.status !== "PAID") {
+          foundPayment.status = "FAILED";
+          foundPayment.failureReason = failReason;
+          if (gatewayResponse) {
+            foundPayment.gatewayResponse = gatewayResponse;
+          }
+          await foundPayment.save();
+          console.log(
+            `[markOrderAndPaymentFailed] Payment found via order and marked FAILED for order ${order.orderId}`
+          );
+        }
+      } catch (pErr) {
+        console.warn("[markOrderAndPaymentFailed] Could not find/update payment by order:", pErr.message);
+      }
     }
 
     if (order) {
@@ -1061,6 +1085,29 @@ const createPayment = async (req, res) => {
       });
     }
 
+    // Agar order pehle se CANCELLED ho (payment fail/cancel ki wajah se) toh
+    // allow karo retry — order ko PENDING pe reset karo
+    if (
+      order.orderStatus === "CANCELLED" &&
+      order.paymentStatus === "FAILED" &&
+      order.paymentMethod === "ONLINE"
+    ) {
+      console.log(
+        `[createPayment] Retrying payment for cancelled order ${order.orderId} — resetting to PENDING`
+      );
+      order.orderStatus = "PENDING";
+      order.paymentStatus = "PENDING";
+      order.cancellationReason = null;
+      order.cancelledAt = null;
+      await order.save();
+    } else if (order.orderStatus === "CANCELLED") {
+      // Kisi aur wajah se CANCELLED hai (admin cancel etc.) — allow mat karo
+      return res.status(400).json({
+        success: false,
+        message: "Order is cancelled and cannot be retried for payment",
+      });
+    }
+
     const amount = Number(order.totalAmount);
     if (!Number.isFinite(amount) || amount <= 0) {
       return res.status(400).json({
@@ -1087,11 +1134,15 @@ const createPayment = async (req, res) => {
         status: "PROCESSING",
       });
     } else {
+      // Existing payment ko reset karo for retry
       payment.amount = amount;
       payment.paymentMethod = order.paymentMethod;
       payment.gateway = "FASTRR";
       payment.status = "PROCESSING";
       payment.failureReason = null;
+      payment.gatewayOrderId = null;
+      payment.paymentId = null;
+      payment.transactionId = null;
       await payment.save();
     }
 
@@ -1391,7 +1442,7 @@ const paymentSuccess = async (req, res) => {
           order = await Order.findById(order._id).populate("items.product");
         } else if (isPaymentFailed(null, checkoutDetails, null)) {
           console.log(
-            `[PaymentSuccess] Payment failed/cancelled in FastRR for ${order.orderId}`
+            `[PaymentSuccess] Payment explicitly failed/cancelled in FastRR for ${order.orderId}`
           );
           await markOrderAndPaymentFailed(
             order,
@@ -1399,6 +1450,23 @@ const paymentSuccess = async (req, res) => {
             checkoutDetails?.result?.error ||
               checkoutDetails?.message ||
               "Payment cancelled / failed in FastRR",
+            checkoutDetails
+          );
+          order = await Order.findById(order._id).populate("items.product");
+        } else if (
+          (order.paymentStatus === "PROCESSING" || order.paymentStatus === "PENDING") &&
+          order.paymentMethod === "ONLINE"
+        ) {
+          // User ne cancel kiya — payment complete nahi hui
+          console.log(
+            `[PaymentSuccess] ONLINE payment not completed for ${order.orderId}, marking FAILED.`
+          );
+          await markOrderAndPaymentFailed(
+            order,
+            payment,
+            checkoutDetails?.result?.error ||
+              checkoutDetails?.message ||
+              "Payment not completed / cancelled by user",
             checkoutDetails
           );
           order = await Order.findById(order._id).populate("items.product");
@@ -1520,21 +1588,34 @@ const verifyPayment = async (req, res) => {
 
         if (isSuccess) {
           await syncFastrrOrder(order, payment, checkoutDetails, null);
-        } else if (
-          isPaymentFailed(null, checkoutDetails, null) ||
-          (order.orderStatus === "PENDING" &&
-            order.paymentMethod === "ONLINE" &&
-            Date.now() - new Date(order.createdAt).getTime() > 60 * 1000)
-        ) {
+        } else if (isPaymentFailed(null, checkoutDetails, null)) {
+          // FastRR ne explicitly failed/cancelled bataya
           console.log(
-            `[Verify] Payment failed/cancelled for order ${order.orderId}`
+            `[Verify] Payment explicitly failed/cancelled in FastRR for order ${order.orderId}`
           );
           await markOrderAndPaymentFailed(
             order,
             payment,
             checkoutDetails?.result?.error ||
               checkoutDetails?.message ||
-              "Payment cancelled / checkout backed out",
+              "Payment cancelled by user",
+            checkoutDetails
+          );
+        } else if (
+          (order.paymentStatus === "PROCESSING" || order.paymentStatus === "PENDING") &&
+          order.paymentMethod === "ONLINE"
+        ) {
+          // User ne checkout modal se cancel kiya — FastRR status INITIATED/PROCESSING mein hai
+          // yani payment complete nahi hui, isliye FAILED mark karo
+          console.log(
+            `[Verify] ONLINE payment not completed for order ${order.orderId} (FastRR status: ${cdStatus}). Marking FAILED.`
+          );
+          await markOrderAndPaymentFailed(
+            order,
+            payment,
+            checkoutDetails?.result?.error ||
+              checkoutDetails?.message ||
+              "Payment not completed / cancelled by user",
             checkoutDetails
           );
         }
@@ -1543,6 +1624,20 @@ const verifyPayment = async (req, res) => {
           "Could not sync with FastRR in verifyPayment:",
           fastrrErr.message
         );
+        // Agar FastRR se connect nahi kar sake aur order PROCESSING mein hai, to bhi fail karo
+        if (
+          (order.paymentStatus === "PROCESSING" || order.paymentStatus === "PENDING") &&
+          order.paymentMethod === "ONLINE"
+        ) {
+          try {
+            await markOrderAndPaymentFailed(
+              order,
+              payment,
+              "Payment not completed / checkout cancelled",
+              null
+            );
+          } catch (_) {}
+        }
       }
     }
 
@@ -1614,33 +1709,85 @@ const paymentFailed = async (req, res) => {
       });
     }
 
+    // Agar order already CONFIRMED/PAID hai toh cancel mat karo
+    if (
+      order &&
+      ["CONFIRMED", "SHIPPED", "OUT_FOR_DELIVERY", "DELIVERED"].includes(
+        String(order?.orderStatus || "").toUpperCase()
+      ) &&
+      String(order?.paymentStatus || "").toUpperCase() === "PAID"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Order is already confirmed/paid and cannot be cancelled via this route",
+        orderId: order.orderId,
+        orderStatus: order.orderStatus,
+        paymentStatus: order.paymentStatus,
+      });
+    }
+
+    // Agar pehle se FAILED/CANCELLED hai toh idempotent response do
+    if (
+      order &&
+      order.orderStatus === "CANCELLED" &&
+      order.paymentStatus === "FAILED"
+    ) {
+      return res.status(200).json({
+        success: true,
+        message: "Payment is already marked as FAILED and order already CANCELLED",
+        orderId: order.orderId,
+        orderStatus: order.orderStatus,
+        paymentStatus: order.paymentStatus,
+        payment: payment
+          ? {
+              id: payment._id,
+              orderId: payment.orderId,
+              status: payment.status,
+              failureReason: payment.failureReason,
+            }
+          : null,
+        order: {
+          id: order._id,
+          orderId: order.orderId,
+          orderStatus: order.orderStatus,
+          paymentStatus: order.paymentStatus,
+          cancellationReason: order.cancellationReason,
+          cancelledAt: order.cancelledAt,
+        },
+      });
+    }
+
     const failReason =
       failureReason || reason || "Payment cancelled by user / failed";
 
     await markOrderAndPaymentFailed(order, payment, failReason, req.body);
 
+    // Fresh data fetch karo DB se — stale in-memory values avoid karne ke liye
+    const updatedOrder = order ? await Order.findById(order._id).lean() : null;
+    const updatedPayment = payment ? await Payment.findById(payment._id).lean() : null;
+
     return res.status(200).json({
       success: true,
       message: "Payment marked as FAILED and order marked as CANCELLED",
-      orderId: order?.orderId || payment?.orderId,
-      orderStatus: order?.orderStatus || "CANCELLED",
-      paymentStatus: payment?.status || "FAILED",
-      payment: payment
+      orderId: updatedOrder?.orderId || updatedPayment?.orderId,
+      orderStatus: updatedOrder?.orderStatus || "CANCELLED",
+      paymentStatus: updatedPayment?.status || "FAILED",
+      payment: updatedPayment
         ? {
-            id: payment._id,
-            orderId: payment.orderId,
-            status: payment.status,
-            failureReason: payment.failureReason,
+            id: updatedPayment._id,
+            orderId: updatedPayment.orderId,
+            status: updatedPayment.status,
+            failureReason: updatedPayment.failureReason,
           }
         : null,
-      order: order
+      order: updatedOrder
         ? {
-            id: order._id,
-            orderId: order.orderId,
-            orderStatus: order.orderStatus,
-            paymentStatus: order.paymentStatus,
-            cancellationReason: order.cancellationReason,
-            cancelledAt: order.cancelledAt,
+            id: updatedOrder._id,
+            orderId: updatedOrder.orderId,
+            orderStatus: updatedOrder.orderStatus,
+            paymentStatus: updatedOrder.paymentStatus,
+            cancellationReason: updatedOrder.cancellationReason,
+            cancelledAt: updatedOrder.cancelledAt,
           }
         : null,
     });
@@ -1875,14 +2022,32 @@ const fastrrWebhook = async (req, res) => {
       });
     }
 
-    // PROCESSING / PENDING CASE
-    payment.gatewayResponse = webhookData;
-    if (status === "PROCESSING") {
-      payment.status = "PROCESSING";
-      order.paymentStatus = "PROCESSING";
-    } else {
-      payment.status = "PENDING";
+    // PROCESSING / PENDING CASE — webhook mein PROCESSING ya koi aur unknown status aaya
+    // Agar ONLINE order hai aur payment success nahi hui to FAILED mark karo
+    if (order.paymentMethod === "ONLINE") {
+      console.log(
+        `[Webhook] ONLINE order ${order.orderId} payment not completed (FastRR status: ${status}). Marking FAILED.`
+      );
+      await markOrderAndPaymentFailed(
+        order,
+        payment,
+        webhookData?.message || webhookData?.error || `Payment not completed (status: ${status})`,
+        webhookData
+      );
+
+      return res.status(200).json({
+        success: true,
+        message: "FastRR webhook: payment not completed, order marked FAILED",
+        status,
+        orderId: order.orderId,
+        paymentStatus: "FAILED",
+        orderStatus: "CANCELLED",
+      });
     }
+
+    // COD orders ke liye sirf webhook data store karo
+    payment.gatewayResponse = webhookData;
+    payment.status = "PENDING";
     await payment.save();
     await order.save();
 

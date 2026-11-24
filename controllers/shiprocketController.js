@@ -1,5 +1,8 @@
+const mongoose = require("mongoose");
 const Order = require("../models/order");
+const User = require("../models/user");
 const whatsappService = require("../services/whatsappService");
+const { linkGuestDataToUser } = require("../utils/guestOrderLinker");
 
 const {
   createShiprocketOrder,
@@ -149,10 +152,26 @@ const createShipment = async (req, res) => {
     // FIND ORDER
     // -----------------------------------------------
 
-    const order = await Order.findOne({
-      orderId,
-      user: req.user.userId,
-    });
+    const userId = req.userId || req.user?.userId;
+    const isAdminUser =
+      req.user?.role === "admin" || req.user?.role === "subadmin";
+
+    if (!isAdminUser && userId && mongoose.isValidObjectId(userId)) {
+      const currentUser = await User.findById(userId).select("_id phone name email");
+      if (currentUser) {
+        await linkGuestDataToUser(currentUser, null, { mergeCart: false });
+      }
+    }
+
+    const orderLookup = mongoose.isValidObjectId(orderId)
+      ? { $or: [{ orderId }, { _id: orderId }] }
+      : { orderId };
+
+    if (!isAdminUser) {
+      orderLookup.user = userId;
+    }
+
+    const order = await Order.findOne(orderLookup);
 
     // -----------------------------------------------
     // CHECK ORDER

@@ -7,6 +7,8 @@ console.log("WHATSAPP API VERSION:", process.env.WHATSAPP_API_VERSION || "v21.0"
 console.log("WHATSAPP PHONE ID:", process.env.WHATSAPP_PHONE_NUMBER_ID);
 console.log("FRONTEND URL:", process.env.FRONTEND_URL);
 console.log("WHATSAPP TOKEN PREFIX:", process.env.WHATSAPP_ACCESS_TOKEN ? process.env.WHATSAPP_ACCESS_TOKEN.slice(0, 15) + "..." : "MISSING");
+console.log("MSG91 AUTH KEY:", process.env.MSG91_AUTH_KEY ? "LOADED" : "MISSING");
+console.log("MSG91 TEMPLATE ID:", process.env.MSG91_TEMPLATE_ID ? "LOADED" : "MISSING");
 console.log("ACTIVE UPLOADS ROOT:", require("./config/storage").getUploadRootDir());
 
 const app = require("./app");

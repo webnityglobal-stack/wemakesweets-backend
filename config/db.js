@@ -28,6 +28,21 @@ console.log("Database Host:", connection.connection.host);
     } catch (idxErr) {
       // Index drop error ignored if not exists
     }
+
+    // Safely sync User email index to be sparse so mobile-OTP users without email don't collide
+    try {
+      const usersCollection = mongoose.connection.collection("users");
+      const userIndexes = await usersCollection.indexes();
+      const emailIndex = userIndexes.find((idx) => idx.name === "email_1");
+      if (emailIndex && emailIndex.unique && !emailIndex.sparse) {
+        console.log("Dropping non-sparse email_1 index on users collection to support mobile-OTP users...");
+        await usersCollection.dropIndex("email_1");
+        await usersCollection.createIndex({ email: 1 }, { unique: true, sparse: true });
+        console.log("Recreated sparse unique email_1 index on users collection.");
+      }
+    } catch (idxErr) {
+      console.warn("⚠️ Could not sync users email_1 index:", idxErr.message);
+    }
   } catch (error) {
     console.error("MongoDB connection failed:", error.message);
     process.exit(1);

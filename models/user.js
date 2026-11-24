@@ -4,16 +4,15 @@ const userSchema = new mongoose.Schema(
   {
     name: {
       type: String,
-      required: true,
+      default: "Customer",
       trim: true,
     },
 
-    
-
     email: {
       type: String,
-      required: true,
+      required: false,
       unique: true,
+      sparse: true,
       lowercase: true,
       trim: true,
     },
@@ -27,8 +26,13 @@ const userSchema = new mongoose.Schema(
 
     password: {
       type: String,
-      required: true,
-      minlength: 6,
+      required: false,
+      default: null,
+    },
+
+    isPhoneVerified: {
+      type: Boolean,
+      default: false,
     },
 
     role: {
