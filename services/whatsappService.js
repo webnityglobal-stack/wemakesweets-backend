@@ -67,7 +67,9 @@ const getActiveProductionDisplayPhone = () => {
 
 // WhatsApp API configuration
 const getWhatsappConfig = (overridePhoneNumberId) => {
-  const token = process.env.WHATSAPP_ACCESS_TOKEN;
+  const token =
+    process.env.WHATSAPP_ACCESS_TOKEN ||
+    "EAAjsv5YpFUUBSjgKBZCQwcrqx5PM7KgZBEfqSMg2eIJxANvxHrUz0qdrzzf3DGpu60vsiINkWchSeZBU8MNTAhZCrwIEiq6F7ZAKzVtSkcNBRuhBrrZCf4zgL4gKA1QcVmCYjcT9T1BRUZCQPACDEjOQP4rmzGakNsovVxZBZAh49zvDwmvdJ6XxhXQdDoAPl6x0cLQZDZD";
   const phoneNumberId =
     overridePhoneNumberId ||
     activeProductionPhoneId ||
@@ -273,16 +275,23 @@ const sendTemplateMessage = async (
  * {{1}} = Customer Name
  */
 const sendWelcomeTemplate = async (to, customerName, overridePhoneNumberId) => {
-  // 1. Try with customerName variable (if template has {{1}})
+  const name =
+    customerName &&
+    String(customerName).trim() &&
+    !["friend", "customer"].includes(String(customerName).trim().toLowerCase())
+      ? String(customerName).trim()
+      : "Customer";
+
+  // 1. Try with customerName variable (template has {{1}})
   let res = await sendTemplateMessage(
     to,
     "wms_welcome",
-    [customerName || "Friend"],
+    [name],
     "en",
     overridePhoneNumberId
   );
 
-  // 2. If failed due to template/parameter mismatch, retry without parameters (if template has no {{1}})
+  // 2. If failed due to template/parameter mismatch, retry without parameters (if template was created as static text)
   if (!res.success) {
     const errStr = JSON.stringify(res.error || "");
     if (
@@ -585,9 +594,17 @@ const sendOutForDeliveryTemplate = async (to, customerName, orderId) => {
  * {{1}} = Customer Name, {{2}} = Order ID
  */
 const sendOrderDeliveredTemplate = async (to, customerName, orderId) => {
+  const name =
+    customerName &&
+    String(customerName).trim() &&
+    !["customer", "valued customer"].includes(String(customerName).trim().toLowerCase())
+      ? String(customerName).trim()
+      : "Customer";
+  const oid = String(orderId || "").trim();
+
   return await sendTemplateMessage(to, "wms_order_delivered", [
-    customerName || "Valued Customer",
-    orderId,
+    name,
+    oid,
   ]);
 };
 
@@ -614,11 +631,17 @@ const sendOrderStatusNotification = async (orderOrId, newStatus) => {
 
     // Determine phone and customer name
     let phone =
-      order.shippingAddress?.phone ||
+      (order.shippingAddress?.phone &&
+      !["9999999999", "0000000000"].includes(String(order.shippingAddress.phone).trim())
+        ? order.shippingAddress.phone
+        : null) ||
       (order.user && typeof order.user === "object" ? order.user.phone : null);
 
     let customerName =
-      order.shippingAddress?.name ||
+      (order.shippingAddress?.name &&
+      !["customer", "valued customer"].includes(String(order.shippingAddress.name).trim().toLowerCase())
+        ? order.shippingAddress.name
+        : null) ||
       (order.user && typeof order.user === "object" ? order.user.name : null);
 
     if ((!phone || !customerName) && order.user) {
@@ -630,6 +653,10 @@ const sendOrderStatusNotification = async (orderOrId, newStatus) => {
           if (!customerName) customerName = userDoc.name;
         }
       } catch (_) {}
+    }
+
+    if (!phone && order.shippingAddress?.phone) {
+      phone = order.shippingAddress.phone;
     }
 
     customerName = customerName || "Customer";
@@ -644,6 +671,19 @@ const sendOrderStatusNotification = async (orderOrId, newStatus) => {
 
     if (normalizedStatus === "IN_TRANSIT") {
       normalizedStatus = "SHIPPED";
+    }
+    if (
+      normalizedStatus === "DELIVERED" ||
+      normalizedStatus.includes("DELIVERED") ||
+      normalizedStatus === "DELIVERY"
+    ) {
+      normalizedStatus = "DELIVERED";
+    }
+    if (
+      normalizedStatus.includes("OUT_FOR_DELIVERY") ||
+      normalizedStatus.includes("OUT_FOR_DELIV")
+    ) {
+      normalizedStatus = "OUT_FOR_DELIVERY";
     }
 
     // Prevent duplicate WhatsApp notifications for the same status on this order
@@ -674,7 +714,6 @@ const sendOrderStatusNotification = async (orderOrId, newStatus) => {
         result = await sendOrderShippedTemplate(phone, customerName, orderId);
         break;
       case "OUT_FOR_DELIVERY":
-      case "OUT_FOR_DELIV":
         result = await sendOutForDeliveryTemplate(phone, customerName, orderId);
         break;
       case "DELIVERED":

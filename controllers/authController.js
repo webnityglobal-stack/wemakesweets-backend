@@ -305,6 +305,22 @@ const verifyLoginOTP = async (req, res) => {
     // 4. Generate JWT Token
     const token = buildAuthToken(user);
 
+    // 5. Send WhatsApp Welcome Message on Login (async in background, non-blocking)
+    if (user.phone) {
+      whatsappService
+        .sendWelcomeNotification(user.phone, user.name)
+        .then((waRes) => {
+          if (waRes?.success) {
+            console.log(`✅ [WhatsApp] Welcome message sent to ${user.phone} on login`);
+          } else {
+            console.warn(`⚠️ [WhatsApp] Welcome message failed for ${user.phone}:`, waRes?.error);
+          }
+        })
+        .catch((err) => {
+          console.error("❌ [WhatsApp] Error sending welcome message on login:", err?.message || err);
+        });
+    }
+
     return res.status(200).json({
       success: true,
       message: "Login successful.",
@@ -441,6 +457,22 @@ const login = async (req, res) => {
     }
 
     const token = buildAuthToken(user);
+
+    // Send WhatsApp Welcome Message on Login if user has phone
+    if (user.phone) {
+      whatsappService
+        .sendWelcomeNotification(user.phone, user.name)
+        .then((waRes) => {
+          if (waRes?.success) {
+            console.log(`✅ [WhatsApp] Welcome message sent to ${user.phone} on password login`);
+          } else {
+            console.warn(`⚠️ [WhatsApp] Welcome message failed for ${user.phone}:`, waRes?.error);
+          }
+        })
+        .catch((err) => {
+          console.error("❌ [WhatsApp] Error sending welcome message on password login:", err?.message || err);
+        });
+    }
 
     return res.status(200).json({
       success: true,

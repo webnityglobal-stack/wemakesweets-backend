@@ -79,24 +79,27 @@ const syncOrderShiprocketStatus = async (order, trackingRes = null) => {
 
     // If still not cancelled, check for delivery or transit updates
     if (order.orderStatus !== "CANCELLED") {
-      if (shipmentStatus === 7 || /DELIVERED/.test(currentStatus)) {
+      const isDelivered = shipmentStatus === 7 || /DELIVERED/i.test(currentStatus);
+      const isOutForDelivery = shipmentStatus === 17 || shipmentStatus === 46 || /OUT.*DELIV/i.test(currentStatus);
+      const isShipped =
+        shipmentStatus === 6 ||
+        shipmentStatus === 18 ||
+        shipmentStatus === 42 ||
+        /TRANSIT|SHIPP|PICKED/i.test(currentStatus);
+
+      if (isDelivered) {
         if (order.orderStatus !== "DELIVERED") {
           order.orderStatus = "DELIVERED";
           order.shiprocket.status = "DELIVERED";
           statusUpdated = true;
         }
-      } else if (shipmentStatus === 17 || shipmentStatus === 46 || /OUT.*DELIV/.test(currentStatus)) {
+      } else if (isOutForDelivery) {
         if (order.orderStatus !== "OUT_FOR_DELIVERY") {
           order.orderStatus = "OUT_FOR_DELIVERY";
           order.shiprocket.status = "OUT_FOR_DELIVERY";
           statusUpdated = true;
         }
-      } else if (
-        shipmentStatus === 6 ||
-        shipmentStatus === 18 ||
-        shipmentStatus === 42 ||
-        /TRANSIT|SHIPP|PICKED/.test(currentStatus)
-      ) {
+      } else if (isShipped) {
         if (order.orderStatus !== "SHIPPED") {
           order.orderStatus = "SHIPPED";
           order.shiprocket.status = "IN_TRANSIT";
@@ -131,6 +134,19 @@ const syncOrderShiprocketStatus = async (order, trackingRes = null) => {
             )
           );
       }
+    } else if (
+      order.orderStatus === "DELIVERED" &&
+      !order.whatsappNotificationsSent?.includes("DELIVERED")
+    ) {
+      // If order is DELIVERED but notification hasn't been sent yet, trigger it now
+      whatsappService
+        .sendOrderStatusNotification(order, "DELIVERED")
+        .catch((waErr) =>
+          console.error(
+            "WhatsApp delivery notification error in syncOrderShiprocketStatus:",
+            waErr.message
+          )
+        );
     }
   } catch (err) {
     console.warn(`[Shiprocket Sync] Error syncing status for order ${order.orderId}:`, err.message);
@@ -1001,19 +1017,22 @@ const handleShiprocketWebhook = async (req, res) => {
     }
 
     const previousStatus = order.orderStatus;
+    const isDelivered = statusId === 7 || /DELIVERED/i.test(status);
+    const isOutForDelivery = statusId === 17 || statusId === 46 || /OUT.*DELIV/i.test(status);
+    const isShipped = statusId === 6 || statusId === 18 || statusId === 42 || /TRANSIT|SHIPP|PICKED/i.test(status);
 
-    if (statusId === 8 || /CANCEL/.test(status)) {
+    if (statusId === 8 || /CANCEL/i.test(status)) {
       order.orderStatus = "CANCELLED";
       order.shiprocket.status = "CANCELLED";
       if (!order.cancelledAt) order.cancelledAt = new Date();
       if (!order.cancellationReason) order.cancellationReason = "Cancelled via Shiprocket Webhook";
-    } else if (statusId === 7 || /DELIVERED/.test(status)) {
+    } else if (isDelivered) {
       order.orderStatus = "DELIVERED";
       order.shiprocket.status = "DELIVERED";
-    } else if (statusId === 17 || statusId === 46 || /OUT.*DELIV/.test(status)) {
+    } else if (isOutForDelivery) {
       order.orderStatus = "OUT_FOR_DELIVERY";
       order.shiprocket.status = "OUT_FOR_DELIVERY";
-    } else if (statusId === 6 || statusId === 18 || statusId === 42 || /TRANSIT|SHIPP|PICKED/.test(status)) {
+    } else if (isShipped) {
       order.orderStatus = "SHIPPED";
       order.shiprocket.status = "IN_TRANSIT";
     }
@@ -1025,11 +1044,8 @@ const handleShiprocketWebhook = async (req, res) => {
     await order.save();
     console.log(`Order ${order.orderId} updated via Shiprocket webhook: orderStatus=${order.orderStatus}, shiprocket.status=${order.shiprocket.status}`);
 
-    // Trigger WhatsApp Status Notification if status changed
-    if (
-      order.orderStatus !== previousStatus &&
-      ["SHIPPED", "OUT_FOR_DELIVERY", "DELIVERED", "PACKED", "CONFIRMED"].includes(order.orderStatus)
-    ) {
+    // Trigger WhatsApp Status Notification if status is actionable
+    if (["SHIPPED", "OUT_FOR_DELIVERY", "DELIVERED", "PACKED", "CONFIRMED"].includes(order.orderStatus)) {
       whatsappService
         .sendOrderStatusNotification(order, order.orderStatus)
         .catch((waErr) =>

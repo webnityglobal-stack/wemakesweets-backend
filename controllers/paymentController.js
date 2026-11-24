@@ -552,23 +552,33 @@ const markOrderAndPaymentFailed = async (
   try {
     const failReason = reason || "Payment cancelled / failed";
 
+    // COD CHECK: Cash on Delivery ke time par payment status kabhi bhi FAILED nahi ho sakta
+    const isCOD =
+      order?.paymentMethod === "COD" ||
+      payment?.paymentMethod === "COD";
+
     // Do not override already confirmed / paid / delivered / shipped orders
     if (
       order &&
       ["CONFIRMED", "SHIPPED", "OUT_FOR_DELIVERY", "DELIVERED"].includes(
         String(order.orderStatus || "").toUpperCase()
       ) &&
-      String(order.paymentStatus || "").toUpperCase() === "PAID"
+      (String(order.paymentStatus || "").toUpperCase() === "PAID" || isCOD)
     ) {
       console.warn(
-        `[markOrderAndPaymentFailed] Skipped: Order ${order.orderId} is already PAID / ${order.orderStatus}`
+        `[markOrderAndPaymentFailed] Skipped: Order ${order.orderId} is ${order.paymentMethod} / ${order.orderStatus}`
       );
       return;
     }
 
     if (payment) {
-      payment.status = "FAILED";
-      payment.failureReason = failReason;
+      if (!isCOD) {
+        payment.status = "FAILED";
+        payment.failureReason = failReason;
+      } else if (payment.status !== "PAID") {
+        // COD order payment is cash on delivery — stays PENDING
+        payment.status = "PENDING";
+      }
       if (gatewayResponse) {
         payment.gatewayResponse = gatewayResponse;
       }
@@ -578,14 +588,18 @@ const markOrderAndPaymentFailed = async (
       try {
         const foundPayment = await Payment.findOne({ order: order._id });
         if (foundPayment && foundPayment.status !== "PAID") {
-          foundPayment.status = "FAILED";
-          foundPayment.failureReason = failReason;
+          if (!isCOD && foundPayment.paymentMethod !== "COD") {
+            foundPayment.status = "FAILED";
+            foundPayment.failureReason = failReason;
+          } else {
+            foundPayment.status = "PENDING";
+          }
           if (gatewayResponse) {
             foundPayment.gatewayResponse = gatewayResponse;
           }
           await foundPayment.save();
           console.log(
-            `[markOrderAndPaymentFailed] Payment found via order and marked FAILED for order ${order.orderId}`
+            `[markOrderAndPaymentFailed] Payment found via order and updated for order ${order.orderId}`
           );
         }
       } catch (pErr) {
@@ -594,7 +608,12 @@ const markOrderAndPaymentFailed = async (
     }
 
     if (order) {
-      order.paymentStatus = "FAILED";
+      if (!isCOD) {
+        order.paymentStatus = "FAILED";
+      } else if (order.paymentStatus !== "PAID") {
+        // COD order payment stays PENDING
+        order.paymentStatus = "PENDING";
+      }
       order.orderStatus = "CANCELLED";
       order.cancellationReason = failReason;
       if (!order.cancelledAt) {
@@ -613,7 +632,7 @@ const markOrderAndPaymentFailed = async (
     }
 
     console.log(
-      `[markOrderAndPaymentFailed] Order ${order?.orderId} marked CANCELLED, payment marked FAILED. Reason: ${failReason}`
+      `[markOrderAndPaymentFailed] Order ${order?.orderId} marked CANCELLED, paymentStatus=${order?.paymentStatus}. Reason: ${failReason}`
     );
   } catch (err) {
     console.error("[markOrderAndPaymentFailed] Error:", err.message);
@@ -1702,10 +1721,15 @@ const paymentFailed = async (req, res) => {
       });
     }
 
-    if (payment && payment.paymentMethod === "COD") {
+    if (
+      (payment && payment.paymentMethod === "COD") ||
+      (order && order.paymentMethod === "COD")
+    ) {
       return res.status(400).json({
         success: false,
-        message: "COD order does not use online payment failure flow",
+        message: "COD order does not use online payment failure flow. Payment status remains PENDING.",
+        orderId: order?.orderId || payment?.orderId,
+        paymentStatus: order?.paymentStatus || payment?.status || "PENDING",
       });
     }
 

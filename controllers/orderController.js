@@ -1176,11 +1176,16 @@ const cancelOrder = async (
     order.cancellationReason =
       reason;
 
+    // COD orders ke liye paymentStatus kabhi bhi FAILED nahi hoga (PENDING rahega)
     if (
       order.paymentStatus === "PROCESSING" ||
       order.paymentStatus === "PENDING"
     ) {
-      order.paymentStatus = "FAILED";
+      if (order.paymentMethod !== "COD") {
+        order.paymentStatus = "FAILED";
+      } else {
+        order.paymentStatus = "PENDING";
+      }
     }
 
     await order.save();
@@ -1190,8 +1195,12 @@ const cancelOrder = async (
       payment &&
       (payment.status === "PROCESSING" || payment.status === "PENDING")
     ) {
-      payment.status = "FAILED";
-      payment.failureReason = reason;
+      if (order.paymentMethod !== "COD" && payment.paymentMethod !== "COD") {
+        payment.status = "FAILED";
+        payment.failureReason = reason;
+      } else {
+        payment.status = "PENDING";
+      }
       await payment.save();
     }
 

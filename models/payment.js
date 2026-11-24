@@ -198,6 +198,17 @@ const paymentSchema = new mongoose.Schema(
 
 
 // =====================================================
+// PRE-SAVE HOOK: COD PAYMENT STATUS GUARD
+// Cash on Delivery ke time par payment status kabhi bhi FAILED nahi ho sakta
+// =====================================================
+
+paymentSchema.pre("save", function () {
+  if (this.paymentMethod === "COD" && this.status === "FAILED") {
+    this.status = "PENDING";
+  }
+});
+
+// =====================================================
 // PREVENT OVERWRITE MODEL ERROR
 // =====================================================
 
