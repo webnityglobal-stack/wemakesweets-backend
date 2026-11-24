@@ -129,10 +129,73 @@ const sendOtp = async (rawPhone, templateParams = {}) => {
     };
   }
 
-  const bodyData =
+  const expiryValue = String(otpExpiry);
+  let envTemplateParams = {};
+  if (process.env.MSG91_TEMPLATE_PARAMS) {
+    try {
+      envTemplateParams = JSON.parse(process.env.MSG91_TEMPLATE_PARAMS);
+    } catch (e) {
+      console.warn("[MSG91] Failed to parse MSG91_TEMPLATE_PARAMS:", e.message);
+    }
+  }
+
+  // Populate all standard DLT / MSG91 placeholder variations for the validity duration
+  // so MSG91 fills "It is valid for 10 minutes." instead of leaving it blank.
+  const defaultTemplateParams = {
+    expiry: expiryValue,
+    EXPIRY: expiryValue,
+    Expiry: expiryValue,
+    time: expiryValue,
+    TIME: expiryValue,
+    Time: expiryValue,
+    min: expiryValue,
+    MIN: expiryValue,
+    Min: expiryValue,
+    mins: expiryValue,
+    MINS: expiryValue,
+    Mins: expiryValue,
+    minute: expiryValue,
+    MINUTE: expiryValue,
+    Minute: expiryValue,
+    minutes: expiryValue,
+    MINUTES: expiryValue,
+    Minutes: expiryValue,
+    validity: expiryValue,
+    VALIDITY: expiryValue,
+    Validity: expiryValue,
+    var: expiryValue,
+    VAR: expiryValue,
+    Var: expiryValue,
+    var1: expiryValue,
+    VAR1: expiryValue,
+    Var1: expiryValue,
+    var2: expiryValue,
+    VAR2: expiryValue,
+    Var2: expiryValue,
+    param1: expiryValue,
+    PARAM1: expiryValue,
+    Param1: expiryValue,
+    param2: expiryValue,
+    PARAM2: expiryValue,
+    Param2: expiryValue,
+    otp_expiry: expiryValue,
+    OTP_EXPIRY: expiryValue,
+    otpExpiry: expiryValue,
+    duration: expiryValue,
+    DURATION: expiryValue,
+    Duration: expiryValue,
+  };
+
+  const callerBody =
     templateParams && typeof templateParams === "object" && !Array.isArray(templateParams)
       ? templateParams
       : {};
+
+  const bodyData = {
+    ...defaultTemplateParams,
+    ...envTemplateParams,
+    ...callerBody,
+  };
 
   try {
     const response = await axios.post(
